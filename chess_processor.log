@@ -1,0 +1,3 @@
+2025-02-03 06:42:23 - INFO - تم تشغيل Tor بنجاح
+2025-02-03 06:42:23 - ERROR - ❌ فشل في تهيئة المعالج: 'ChessTextProcessor' object has no attribute 'setup_logging'
+2025-02-03 06:42:23 - ERROR - خطأ في البرنامج الرئيسي: 'ChessTextProcessor' object has no attribute 'setup_logging'
