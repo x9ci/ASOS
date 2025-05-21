@@ -1,6 +1,7 @@
 import sys
 import os
 import logging
+import argparse
 import subprocess
 import platform
 import psutil
@@ -763,39 +764,131 @@ class ChessTextProcessor:
                     })
                     text = text[:match.start()] + f"[PRESERVED_{len(preserved)-1}]" + text[match.end():]
 
-            # تقسيم النص إلى أجزاء
-            chunks = []
-            current_chunk = []
-            for line in text.split('\n'):
-                if len(' '.join(current_chunk)) > chunk_size:
-                    chunks.append('\n'.join(current_chunk))
-                    current_chunk = []
-                current_chunk.append(line)
-            
-            if current_chunk:
-                chunks.append('\n'.join(current_chunk))
+            # تقسيم النص إلى أجزاء مع تحسينات للسياق - نسخة معدلة
+            final_text_segments = [] # سيحتوي هذا على أجزاء نصية للترجمة وفواصل محفوظة
 
-            # ترجمة كل جزء
-            translated_chunks = []
-            for chunk in chunks:
-                translated_chunk = self.translate_with_retry(chunk)
-                translated_chunks.append(translated_chunk)
+            # 1. تقسيم النص إلى فقرات مع الحفاظ على الفواصل
+            paragraphs_and_para_separators = re.split(r'(\n\s*\n+)', text)
+
+            for para_segment in paragraphs_and_para_separators:
+                if not para_segment: # تجاهل الأجزاء الفارغة
+                    continue
                 
-                # تأخير ذكي بين الأجزاء
-                self.smart_delay()
+                # التحقق مما إذا كان الجزء هو فاصل فقرات
+                if re.fullmatch(r'\n\s*\n+', para_segment):
+                    final_text_segments.append(para_segment) # حفظ فاصل الفقرات
+                    continue
 
-            # دمج الأجزاء المترجمة
-            translated_text = '\n'.join(translated_chunks)
+                # إذا لم يكن فاصل فقرات، فهو نص فقرة يحتاج إلى مزيد من المعالجة
+                paragraph_text = para_segment
+                
+                # 2. تقسيم الفقرات إلى جمل مع الحفاظ على الفواصل بين الجمل
+                #    نستخدم lookahead سلبي (?![^\[]*\]) لتجنب التقسيم داخل [PRESERVED_X]
+                #    ونستخدم lookbehind إيجابي (?<=[.?!]) للتقسيم بعد علامات الترقيم
+                #    المجموعة الخارجية (...) تلتقط الفاصل نفسه (علامة الترقيم + المسافة)
+                sentences_and_sentence_delimiters = re.split(r'((?<=[.?!])\s+(?![^\[]*\]))', paragraph_text)
+
+                for sentence_segment in sentences_and_sentence_delimiters:
+                    if not sentence_segment: # تجاهل الأجزاء الفارغة
+                        continue
+
+                    # التحقق مما إذا كان الجزء هو فاصل جملة (مثل ". ")
+                    if re.fullmatch(r'(?<=[.?!])\s+', sentence_segment):
+                        final_text_segments.append(sentence_segment) # حفظ فاصل الجملة
+                        continue
+                    
+                    # إذا لم يكن فاصل جملة، فهو نص جملة يحتاج إلى ترجمة أو تقسيم إضافي
+                    sentence_text_content = sentence_segment.strip() # إزالة أي مسافات بيضاء طرفية قد تكون متبقية
+                    if not sentence_text_content: # إذا كان فارغًا بعد strip، تجاهله أو أضف المسافة الأصلية إذا كانت مهمة
+                        if sentence_segment.isspace(): # إذا كان الجزء الأصلي مجرد مسافة
+                             final_text_segments.append(sentence_segment)
+                        continue
+
+
+                    # 3. التعامل مع الجمل الطويلة (التي تتجاوز chunk_size)
+                    if len(sentence_text_content) > chunk_size:
+                        sub_segment_parts = []
+                        current_sub_segment = ""
+                        # تقسيم الجملة الطويلة إلى كلمات وفواصل للحفاظ على السلامة
+                        words_and_spaces = re.split(r'(\s+)', sentence_text_content)
+
+                        for part in words_and_spaces:
+                            if len(current_sub_segment + part) > chunk_size and current_sub_segment:
+                                sub_segment_parts.append(current_sub_segment)
+                                current_sub_segment = part.lstrip() # ابدأ الجزء الجديد بالكلمة/الجزء بدون مسافة بادئة
+                            else:
+                                current_sub_segment += part
+                        
+                        if current_sub_segment: # إضافة أي جزء متبقي
+                            sub_segment_parts.append(current_sub_segment)
+                        
+                        final_text_segments.extend(sub_segment_parts)
+                    else:
+                        # إضافة الجملة كما هي إذا كانت ضمن الحجم المطلوب
+                        final_text_segments.append(sentence_text_content)
+            
+            # ترجمة الأجزاء النصية فقط
+            translated_parts = []
+            for i, segment_to_process in enumerate(final_text_segments):
+                # التحقق مما إذا كان الجزء فاصلًا (فقرة أو جملة) أو مجرد مسافة بيضاء أو فارغ
+                is_paragraph_separator = re.fullmatch(r'\n\s*\n+', segment_to_process)
+                is_sentence_delimiter = re.fullmatch(r'(?<=[.?!])\s+', segment_to_process)
+                is_whitespace_or_empty = not segment_to_process.strip()
+
+                if is_paragraph_separator or is_sentence_delimiter or is_whitespace_or_empty:
+                    translated_parts.append(segment_to_process) # الحفاظ على الفواصل والمسافات كما هي
+                else:
+                    # هذا جزء نصي يحتاج إلى ترجمة
+                    logging.info(f"Translating segment ({i+1}/{len(final_text_segments)}): '{segment_to_process[:100]}...'")
+                    translated_chunk = self.translate_with_retry(segment_to_process)
+                    translated_parts.append(translated_chunk)
+                    self.smart_delay() # تأخير ذكي بعد كل عملية ترجمة فعلية
+            
+            translated_text = "".join(translated_parts)
 
             # استعادة العناصر المحفوظة
             for item in preserved:
                 translated_text = translated_text.replace(item['placeholder'], item['content'])
+            
+            # الخطوة الإضافية: تنظيف أي بقايا [preserved_d+] حرفية قد تظهر
+            # translated_text = self.final_cleanup_of_leftover_placeholders(translated_text)
+            # تم نقل هذا الاستدعاء إلى process_file ليعمل على الصفحة المترجمة بالكامل
 
             return translated_text
 
         except Exception as e:
             logging.error(f"خطأ في معالجة النص: {str(e)}")
             return text
+
+    def final_cleanup_of_leftover_placeholders(self, text: str) -> str:
+        """
+        تنظيف نهائي لإزالة أي بقايا حرفية تشبه العناصر النائبة مثل [preserved_0]
+        التي قد تظهر بشكل غير متوقع في النص المترجم.
+        """
+        # النمط للبحث عن: [preserved_رقم] (حرف p صغير، مع شرطة سفلية)
+        pattern = r'\[preserved_\d+\]'
+        
+        # البحث عن جميع التطابقات أولاً لأغراض التسجيل
+        found_artifacts = re.findall(pattern, text)
+        
+        if found_artifacts:
+            # تسجيل تحذير مع ذكر العناصر الفريدة التي تم العثور عليها
+            unique_artifacts = sorted(list(set(found_artifacts)))
+            logging.warning(
+                f"تم العثور على بقايا عناصر نائبة حرفية في النص المترجم وجاري إزالتها: {', '.join(unique_artifacts)}"
+            )
+            
+            # إزالة النمط واستبداله بمسافة واحدة للتعامل مع المسافات المحيطة
+            # الخطوة 1: استبدل النمط والمسافات المحيطة به بمسافة واحدة
+            text = re.sub(r'\s*' + pattern + r'\s*', ' ', text)
+            
+            # الخطوة 2: تطبيع المسافات المتعددة إلى مسافة واحدة
+            text = re.sub(r'\s{2,}', ' ', text)
+            
+            # الخطوة 3: إزالة أي مسافات بادئة أو لاحقة من النص بأكمله
+            text = text.strip()
+            
+        return text
 
     def smart_delay(self):
         """تأخير ذكي مع تغيير متغير"""
@@ -857,11 +950,15 @@ class ChessTextProcessor:
                             print(f"جاري معالجة الصفحة {current_page} من {total_pages}")
 
                             # ترجمة الصفحة
-                            translated_page = self.process_text_block(page)
-                            translated_pages.append(translated_page)
+                            translated_page_content = self.process_text_block(page)
+                            
+                            # تطبيق التنظيف النهائي على الصفحة المترجمة
+                            cleaned_translated_page = self.final_cleanup_of_leftover_placeholders(translated_page_content)
+                            
+                            translated_pages.append(cleaned_translated_page)
                             
                             # كتابة الصفحة مباشرة إلى الملف
-                            outfile.write(translated_page + "\n")
+                            outfile.write(cleaned_translated_page + "\n")
                             outfile.flush()  # ضمان حفظ البيانات
                             
                             current_page += 1
@@ -917,6 +1014,15 @@ def main():
     """الدالة الرئيسية للبرنامج"""
     processor = None
     try:
+        # إعداد argparse
+        parser = argparse.ArgumentParser(description="معالجة وترجمة ملف نصي.")
+        parser.add_argument(
+            "--input-file",
+            required=True,
+            help="مسار ملف الإدخال النصي"
+        )
+        args = parser.parse_args()
+
         # إنشاء المعالج
         processor = ChessTextProcessor()
 
@@ -924,8 +1030,8 @@ def main():
         if not processor.verify_system_requirements():
             raise Exception("فشل التحقق من متطلبات النظام")
 
-        # تحديد مسار الملف
-        input_file = "/home/dc/Public/fml/output/document.txt"
+        # تحديد مسار الملف من الـ argument
+        input_file = args.input_file
         if not os.path.exists(input_file):
             raise FileNotFoundError(f"الملف غير موجود: {input_file}")
 
@@ -943,8 +1049,8 @@ def main():
         sys.exit(1)
     finally:
         # تنظيف الموارد
-        if processor:
-            processor.cleanup()
+        # if processor:  # processor might not be initialized if argparse fails early
+            # processor.cleanup() # cleanup method does not exist
 
 if __name__ == "__main__":
     try:
