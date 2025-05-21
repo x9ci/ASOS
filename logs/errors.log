@@ -1,0 +1,132 @@
+2025-05-21 22:29:40,333 - ERROR - ❌ Tor غير مثبت في النظام
+Stack trace:
+None
+
+2025-05-21 22:29:40,333 - ERROR - ❌ فشل في تهيئة المعالج: فشل التحقق من متطلبات النظام
+Stack trace:
+None
+
+2025-05-21 22:29:40,333 - CRITICAL - خطأ فادح في البرنامج أدى إلى إيقافه: فشل التحقق من متطلبات النظام
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 1014, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 103, in __init__
+    raise Exception("فشل التحقق من متطلبات النظام")
+Exception: فشل التحقق من متطلبات النظام
+2025-05-21 22:30:24,356 - ERROR - المنفذ 9051 غير متاح
+Stack trace:
+None
+
+2025-05-21 22:30:24,357 - ERROR - ❌ فشل في تهيئة المعالج: فشل في تهيئة خدمة Tor
+Stack trace:
+None
+
+2025-05-21 22:30:24,357 - CRITICAL - خطأ فادح في البرنامج أدى إلى إيقافه: فشل في تهيئة خدمة Tor
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 1014, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 107, in __init__
+    raise Exception("فشل في تهيئة خدمة Tor")
+Exception: فشل في تهيئة خدمة Tor
+2025-05-21 22:31:08,021 - ERROR - خطأ في التحقق من خدمة Tor: SOCKSHTTPSConnectionPool(host='check.torproject.org', port=443): Max retries exceeded with url: / (Caused by ConnectTimeoutError(<urllib3.contrib.socks.SOCKSHTTPSConnection object at 0x7f532424fe20>, 'Connection to check.torproject.org timed out. (connect timeout=10)'))
+Stack trace:
+None
+
+2025-05-21 22:31:08,021 - ERROR - ❌ فشل في تهيئة المعالج: فشل في تهيئة خدمة Tor
+Stack trace:
+None
+
+2025-05-21 22:31:08,021 - CRITICAL - خطأ فادح في البرنامج أدى إلى إيقافه: فشل في تهيئة خدمة Tor
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 1023, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 107, in __init__
+    raise Exception("فشل في تهيئة خدمة Tor")
+Exception: فشل في تهيئة خدمة Tor
+2025-05-21 22:31:51,436 - ERROR - خطأ في التحقق من خدمة Tor (ربما فشل الاتصال بـ check.torproject.org): SOCKSHTTPSConnectionPool(host='check.torproject.org', port=443): Max retries exceeded with url: / (Caused by ConnectTimeoutError(<urllib3.contrib.socks.SOCKSHTTPSConnection object at 0x7f2841df3520>, 'Connection to check.torproject.org timed out. (connect timeout=10)'))
+Stack trace:
+None
+
+2025-05-21 22:31:51,436 - ERROR - ❌ فشل في تهيئة المعالج: 'ChessTextProcessor' object has no attribute 'manage_network_settings'
+Stack trace:
+None
+
+2025-05-21 22:31:51,436 - CRITICAL - خطأ فادح في البرنامج أدى إلى إيقافه: 'ChessTextProcessor' object has no attribute 'manage_network_settings'
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 1028, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 110, in __init__
+    if not self.manage_network_settings():
+AttributeError: 'ChessTextProcessor' object has no attribute 'manage_network_settings'
+2025-05-21 22:32:52,025 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:33:09,968 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:33:30,329 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:33:55,720 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:34:17,735 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:34:45,212 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:35:07,008 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:35:25,603 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:35:52,239 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:36:16,478 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:36:41,586 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:37:06,371 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:37:32,228 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:37:55,025 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:38:18,225 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
+2025-05-21 22:38:38,839 - ERROR - ❌ خطأ أثناء محاولة تجديد دائرة Tor: [Errno 111] Connection refused
+Stack trace:
+None
+
