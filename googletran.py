@@ -70,7 +70,8 @@ class ChessTextProcessor:
             
             # إعداد User-Agent والهيدرز
             try:
-                self.user_agents = UserAgent(verify_ssl=False)
+                # Changed UserAgent initialization to remove verify_ssl=False
+                self.user_agents = UserAgent()
                 self.headers = self.get_advanced_headers()
             except Exception as e:
                 logging.warning(f"فشل في إعداد User-Agent المتقدم: {e}")
@@ -262,6 +263,18 @@ class ChessTextProcessor:
         }
         return headers
     
+    def get_fallback_headers(self):
+        logging.info("Using fallback headers as UserAgent initialization failed or was skipped.")
+        return {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate', # Added standard encoding
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'no-cache', # Added standard cache control
+            'Pragma': 'no-cache' # Added standard pragma
+        }
     
     def verify_system_requirements(self):
         """التحقق من متطلبات النظام والمكتبات"""
