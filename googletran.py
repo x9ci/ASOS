@@ -1,7 +1,6 @@
 import sys
 import os
 import logging
-import argparse
 import subprocess
 import platform
 import psutil
@@ -764,6 +763,19 @@ class ChessTextProcessor:
                     })
                     text = text[:match.start()] + f"[PRESERVED_{len(preserved)-1}]" + text[match.end():]
 
+            # Part 2: Implement Space Insertion Around Placeholders Adjacent to Arabic Text
+            # This is done after all placeholders are inserted and before chunking.
+            ARABIC_UNICODE_RANGE = r'\u0600-\u06FF' # Standard Arabic Unicode range
+            PLACEHOLDER_PATTERN = r'\[PRESERVED_\d+\]'
+
+            # Case 1: Arabic char followed by placeholder, no space
+            # Example: م[PRESERVED_0] -> م [PRESERVED_0]
+            text = re.sub(rf"([{ARABIC_UNICODE_RANGE}])({PLACEHOLDER_PATTERN})", r"\1 \2", text)
+            
+            # Case 2: Placeholder followed by Arabic char, no space
+            # Example: [PRESERVED_0]م -> [PRESERVED_0] م
+            text = re.sub(rf"({PLACEHOLDER_PATTERN})([{ARABIC_UNICODE_RANGE}])", r"\1 \2", text)
+
             # تقسيم النص إلى أجزاء مع تحسينات للسياق - نسخة معدلة
             final_text_segments = [] # سيحتوي هذا على أجزاء نصية للترجمة وفواصل محفوظة
 
@@ -866,7 +878,8 @@ class ChessTextProcessor:
         التي قد تظهر بشكل غير متوقع في النص المترجم.
         """
         # النمط للبحث عن: [preserved_رقم] (حرف p صغير، مع شرطة سفلية)
-        pattern = r'\[preserved_\d+\]'
+        # تم تحسينه ليشمل المسافات الاختيارية داخل الأقواس
+        pattern = r'\[\s*preserved_\d+\s*\]'
         
         # البحث عن جميع التطابقات أولاً لأغراض التسجيل
         found_artifacts = re.findall(pattern, text)
@@ -1014,15 +1027,6 @@ def main():
     """الدالة الرئيسية للبرنامج"""
     processor = None
     try:
-        # إعداد argparse
-        parser = argparse.ArgumentParser(description="معالجة وترجمة ملف نصي.")
-        parser.add_argument(
-            "--input-file",
-            required=True,
-            help="مسار ملف الإدخال النصي"
-        )
-        args = parser.parse_args()
-
         # إنشاء المعالج
         processor = ChessTextProcessor()
 
@@ -1030,8 +1034,8 @@ def main():
         if not processor.verify_system_requirements():
             raise Exception("فشل التحقق من متطلبات النظام")
 
-        # تحديد مسار الملف من الـ argument
-        input_file = args.input_file
+        # تحديد مسار الملف (Hardcoded)
+        input_file = "/home/dc/Public/fml/output/document.txt"
         if not os.path.exists(input_file):
             raise FileNotFoundError(f"الملف غير موجود: {input_file}")
 
