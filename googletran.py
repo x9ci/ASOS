@@ -17,63 +17,21 @@ import arabic_reshaper
 from bidi.algorithm import get_display  # استخدام bidi بدلاً من python-bidi
 import re
 import json
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 # تعريف المتغيرات العامة
-CURRENT_USER = os.getenv('USER', 'unknown')
+CURRENT_USER = os.getenv('USER', 'unknown') # User for logging purposes
 
 # الإعدادات العامة
-CURRENT_USER = "x9up"  # تعديل اسم المستخدم حسب المدخل
-MAX_RETRIES = 3
-DELAY_MIN = 2
-DELAY_MAX = 5
-CHUNK_SIZE = 1000
-MAX_CONSECUTIVE_FAILURES = 3
+CURRENT_USER = "x9up"  # تعديل اسم المستخدم حسب المدخل (User override for specific context)
+MAX_RETRIES = 3  # Maximum number of retries for a failing translation attempt on a single chunk
+DELAY_MIN = 2  # Minimum delay in seconds between translation requests
+DELAY_MAX = 5  # Maximum delay in seconds between translation requests
+CHUNK_SIZE = 1000  # Approximate size in characters for splitting text blocks for translation
+MAX_CONSECUTIVE_FAILURES = 3  # Number of consecutive failures on a translator before trying to rotate translator/proxy
 
-# إعداد Tor
-def setup_tor():
-    """إعداد وتكوين Tor"""
-    try:
-        # تكوين ملف Tor
-        tor_config = """
-SocksPort 9050
-ControlPort 9051
-CookieAuthentication 1
-DataDirectory /var/lib/tor
-RunAsDaemon 1
-ExitNodes {us},{nl},{de},{fr},{gb}
-StrictNodes 1
-CircuitBuildTimeout 60
-MaxCircuitDirtiness 600
-NumEntryGuards 8
-"""
-        with open('/tmp/torrc', 'w') as f:
-            f.write(tor_config)
-        
-        # نسخ الملف إلى المكان الصحيح
-        subprocess.run(['sudo', 'cp', '/tmp/torrc', '/etc/tor/torrc'])
-        subprocess.run(['sudo', 'chmod', '644', '/etc/tor/torrc'])
-        
-        # إعادة تشغيل Tor
-        subprocess.run(['sudo', 'service', 'tor', 'restart'])
-        time.sleep(5)
-        
-        # تكوين SOCKS
-        socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-        socket.socket = socks.socksocket
-        
-        return True
-    except Exception as e:
-        print(f"خطأ في إعداد Tor: {str(e)}")
-        return False
-
-# تكوين SOCKS proxy
-if setup_tor():
-    print("✅ تم إعداد Tor بنجاح")
-else:
-    print("❌ فشل في إعداد Tor")
-    sys.exit(1)
-
+# ملاحظة: تمت إزالة الدالة setup_tor() وإعداد SOCKS العام.
+# يجب أن يعتمد البرنامج النصي الآن على تثبيت وتهيئة TOR حالية.
 
 class ChessTextProcessor:
     def __init__(self):
@@ -95,17 +53,17 @@ class ChessTextProcessor:
             if not self.verify_system_requirements():
                 raise Exception("فشل التحقق من متطلبات النظام")
 
-            # التحقق من Tor
+            # التحقق من خدمة Tor القائمة
+            # This script expects TOR to be pre-configured and running.
             if not self.verify_tor_service():
-                raise Exception("فشل في تهيئة خدمة Tor")
+                # تم تحديث الرسالة في verify_tor_service لتكون أكثر إفادة
+                raise Exception("فشل التحقق من خدمة TOR. يرجى التأكد من أن خدمة TOR تعمل وأن المنافذ الضرورية متاحة.")
 
-            # إعداد الشبكة
-            if not self.manage_network_settings():
-                raise Exception("فشل في إعداد الشبكة")
-
-            # إعداد الاتصال
-            if not self.setup_advanced_connection():
-                raise Exception("فشل في الإعداد المتقدم للاتصال")
+            # إعداد الاتصال عبر Tor (مثل طلب دائرة جديدة)
+            # This step attempts to connect to the TOR ControlPort to request a new circuit (IP address).
+            # تم تعديل setup_tor_connection لعدم إعادة تشغيل الخدمة
+            if not self.setup_tor_connection(): # استبدال setup_advanced_connection
+                raise Exception("فشل في إعداد الاتصال عبر TOR (مثل طلب دائرة جديدة).")
 
             # إعداد البروكسيات
             self.setup_proxies()
@@ -128,91 +86,113 @@ class ChessTextProcessor:
             logging.info("✅ تم إكمال تهيئة المعالج بنجاح")
 
         except Exception as e:
-            logging.error(f"❌ فشل في تهيئة المعالج: {str(e)}")
-            raise
+            logging.error(f"❌ فشل في تهيئة المعالج: {str(e)}", exc_info=True)
+            # توفير رسالة واضحة للمستخدم باللغة العربية قبل إعادة رفع الاستثناء
+            raise Exception(f"❌ فشل تهيئة معالج النصوص. تفاصيل الخطأ مسجلة. الخطأ الأصلي: {str(e)}")
 
     def setup_tor_connection(self):
-        """إعداد اتصال Tor"""
+        """إعداد الاتصال بوحدة تحكم Tor وطلب دائرة جديدة."""
+        # This function connects to the TOR ControlPort (default 9051) to signal for a new TOR circuit.
+        # A new circuit means a new exit IP address, which can help avoid IP-based blocking.
         try:
-            # إعادة تشغيل خدمة Tor
-            subprocess.run(['sudo', 'service', 'tor', 'restart'], check=True)
-            time.sleep(5)
+            # لا تقم بإعادة تشغيل خدمة Tor هنا
+            logging.info("محاولة الاتصال بوحدة تحكم Tor لطلب دائرة جديدة...")
 
-            # تكوين SOCKS
-            socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-            socket.socket = socks.socksocket
-
-            # التحقق من الاتصال
-            test_socket = socket.socket()
-            test_socket.settimeout(10)
-            test_socket.connect(('check.torproject.org', 443))
-            test_socket.close()
-
-            with Controller.from_port(port=9051) as controller:
+            # Connect to TOR's ControlPort (default: 127.0.0.1:9051)
+            with Controller.from_port(address="127.0.0.1", port=9051) as controller:
                 try:
-                    controller.authenticate(password="9090")
-                except:
+                    # محاولة المصادقة باستخدام ملف تعريف الارتباط (cookie) أولاً
+                    # TOR often uses cookie authentication by default.
                     controller.authenticate()
+                    logging.info("✅ تمت المصادقة مع وحدة تحكم Tor بنجاح (ملف تعريف الارتباط).")
+                except Exception as auth_cookie_error:
+                    logging.warning(f"فشلت المصادقة باستخدام ملف تعريف الارتباط: {auth_cookie_error}. قد تحتاج إلى كلمة مرور إذا تم تكوينها.")
+                    # لا تفشل هنا، فقط سجل التحذير. NEWNYM قد يعمل بدون مصادقة في بعض التكوينات.
+                
+                # Request a new TOR circuit. Signal.NEWNYM tells TOR to establish a new clean circuit.
                 controller.signal(Signal.NEWNYM)
-                time.sleep(controller.get_newnym_wait())
-
-            logging.info("✅ تم إعداد اتصال Tor بنجاح")
+                # انتظر حتى تكون الدائرة الجديدة جاهزة (اختياري ولكن موصى به)
+                # get_newnym_wait() provides an estimated time TOR needs to build the new circuit.
+                time.sleep(controller.get_newnym_wait()) 
+                logging.info("✅ تم طلب دائرة Tor جديدة بنجاح.")
             return True
 
+        except stem.SocketError as se:
+            logging.error(f"❌ خطأ في الاتصال بمقبس Tor (ControlPort): {str(se)}", exc_info=True)
+            logging.error("يرجى التأكد من أن خدمة TOR تعمل وأن منفذ التحكم (عادة 9051) متاح ويمكن الوصول إليه.")
+            return False
+        except stem.connection.AuthenticationFailure as af:
+            logging.error(f"❌ فشل المصادقة مع وحدة تحكم Tor: {str(af)}", exc_info=True)
+            logging.error("يرجى التحقق من تكوين مصادقة منفذ التحكم لـ Tor (مثل كلمة المرور أو ملف تعريف الارتباط).")
+            return False
+        except stem.ProtocolError as pe:
+            logging.error(f"❌ خطأ في بروتوكول وحدة تحكم Tor: {str(pe)}", exc_info=True)
+            return False
         except Exception as e:
-            logging.error(f"خطأ في إعداد اتصال Tor: {str(e)}")
+            logging.error(f"❌ خطأ غير متوقع في إعداد اتصال Tor أو طلب دائرة جديدة: {str(e)}", exc_info=True)
+            logging.error("يرجى التأكد من أن خدمة TOR تعمل وأن منفذ التحكم (عادة 9051) متاح ومكون بشكل صحيح.")
             return False
 
-    
-    
     def verify_tor_service(self):
-        """التحقق من خدمة Tor وإعادة تشغيلها إذا لزم الأمر"""
+        """التحقق من أن منافذ SOCKS والتحكم لـ Tor تستمع، واختبار الاتصال."""
+        # This function checks if TOR is likely running and accessible.
+        # It expects TOR to be pre-configured and listening on standard ports.
+        logging.info("التحقق من حالة خدمة Tor الحالية...")
+        ports_ok = True
+        # Default TOR SOCKS port is 9050, ControlPort is 9051.
+        for port_name, port_num in [("SOCKS", 9050), ("ControlPort", 9051)]:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5) # مهلة قصيرة للتحقق من المنفذ
+            result = sock.connect_ex(('127.0.0.1', port_num)) # Check if port is open
+            sock.close()
+            if result == 0:
+                logging.info(f"✅ منفذ Tor {port_name} ({port_num}) يستمع.")
+            else:
+                logging.error(f"❌ منفذ Tor {port_name} ({port_num}) لا يستمع أو غير متاح.")
+                ports_ok = False
+        
+        if not ports_ok:
+            logging.error("فشل الاتصال بـ TOR. يرجى التأكد من أن خدمة TOR تعمل وأن منفذ SOCKS (9050) ومنفذ التحكم (9051) متاحان ومكونان بشكل صحيح.")
+            return False
+
+        # اختبار الاتصال عبر Tor SOCKS proxy
+        logging.info("اختبار الاتصال عبر بروكسي Tor SOCKS...")
         try:
-            # التحقق من وجود المجلدات الضرورية
-            required_dirs = ['/var/lib/tor', '/etc/tor', '/var/log/tor']
-            for dir_path in required_dirs:
-                if not os.path.exists(dir_path):
-                    subprocess.run(['sudo', 'mkdir', '-p', dir_path], check=True)
-                    subprocess.run(['sudo', 'chown', 'debian-tor:debian-tor', dir_path], check=True)
-                    
-            # التحقق من حالة الخدمة
-            status = subprocess.run(['systemctl', 'is-active', 'tor'], 
-                                  capture_output=True, 
-                                  text=True).stdout.strip()
-            
-            if status != 'active':
-                logging.info("خدمة Tor غير نشطة. جاري إعادة التشغيل...")
-                subprocess.run(['sudo', 'systemctl', 'restart', 'tor'], check=True)
-                time.sleep(5)
-            
-            # التحقق من المنافذ
-            for port in [9050, 9051]:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                result = sock.connect_ex(('127.0.0.1', port))
-                sock.close()
-                if result != 0:
-                    logging.error(f"المنفذ {port} غير متاح")
-                    return False
-            
-            # اختبار الاتصال عبر Tor
             session = requests.Session()
             session.proxies = {
                 'http': 'socks5h://127.0.0.1:9050',
                 'https': 'socks5h://127.0.0.1:9050'
             }
+            # استخدم رأس User-Agent لتجنب الحظر المحتمل
+            headers = {'User-Agent': 'Mozilla/5.0'} # يمكن استخدام self.get_advanced_headers() إذا كانت متاحة ومناسبة هنا
+            response = session.get('https://check.torproject.org/', timeout=20, headers=headers) # زيادة المهلة قليلاً
             
-            response = session.get('https://check.torproject.org/', timeout=10)
-            if 'Congratulations' in response.text:
-                logging.info("✅ تم التحقق من خدمة Tor بنجاح")
+            # النص المتوقع قد يختلف قليلاً بناءً على اللغة أو تحديثات الموقع
+            # نتحقق من وجود جزء أساسي من رسالة النجاح
+            if 'Congratulations' in response.text and 'Tor' in response.text:
+                logging.info("✅ تم التحقق من الاتصال عبر بروكسي Tor SOCKS بنجاح.")
                 return True
             else:
-                logging.error("❌ الاتصال ليس عبر شبكة Tor")
+                logging.error("❌ فشل التحقق من الاتصال عبر بروكسي Tor SOCKS. الرد لا يحتوي على رسالة النجاح المتوقعة.")
+                logging.debug(f"محتوى الرد من check.torproject.org: {response.text[:500]}") # سجل جزءًا من الرد للمساعدة في التشخيص
                 return False
                 
-        except Exception as e:
-            logging.error(f"خطأ في التحقق من خدمة Tor: {str(e)}")
+        except requests.exceptions.Timeout:
+            logging.error("Timeout occurred while trying to connect to check.torproject.org through Tor SOCKS proxy.", exc_info=True)
+            logging.error("فشل الاتصال بـ TOR بسبب انتهاء المهلة. قد تكون الشبكة بطيئة أو TOR غير قادر على إنشاء دائرة.")
             return False
-    
+        except requests.exceptions.ConnectionError:
+            logging.error("Connection error while trying to connect to check.torproject.org through Tor SOCKS proxy.", exc_info=True)
+            logging.error("فشل الاتصال بـ TOR. تأكد أن خدمة TOR تعمل وأن المنفذ 9050 SOCKS متاح.")
+            return False
+        except requests.exceptions.RequestException as e:
+            logging.error(f"❌ خطأ أثناء اختبار الاتصال عبر بروكسي Tor SOCKS: {str(e)}", exc_info=True)
+            logging.error("فشل الاتصال بـ TOR. يرجى التأكد من أن خدمة TOR تعمل وأن منفذ SOCKS (9050) متاح ومكون بشكل صحيح.")
+            return False
+        except Exception as e:
+            logging.error(f"❌ خطأ غير متوقع أثناء اختبار الاتصال عبر بروكسي Tor SOCKS: {str(e)}", exc_info=True)
+            return False
+
     def check_tor_status(self):
         """التحقق من حالة Tor"""
         try:
@@ -238,8 +218,14 @@ class ChessTextProcessor:
                 
             return True
             
+        except FileNotFoundError:
+            logging.error("لم يتم العثور على الأمر 'systemctl'. هل هذا نظام غير قائم على systemd؟", exc_info=True)
+            return False # لا يمكن التحقق من الحالة
+        except subprocess.CalledProcessError as cpe:
+            logging.error(f"خطأ أثناء تنفيذ أمر التحقق من حالة Tor: {cpe}", exc_info=True)
+            return False
         except Exception as e:
-            logging.error(f"خطأ في التحقق من حالة Tor: {str(e)}")
+            logging.error(f"خطأ غير متوقع في التحقق من حالة Tor: {str(e)}", exc_info=True)
             return False
 
     def get_advanced_headers(self):
@@ -287,35 +273,38 @@ class ChessTextProcessor:
 
             # التحقق من المكتبات المطلوبة
             required_packages = {
-                'deep_translator': '1.8.0',
-                'requests': '2.25.0',
-                'fake_useragent': '0.1.11',
-                'stem': '1.8.0',
-                'socks': '1.7.1',  # تغيير من PySocks إلى socks
-                'arabic_reshaper': '2.1.3',
-                'bidi': '0.4.2',   # تغيير من python-bidi إلى bidi
-                'psutil': '5.8.0'
+                'deep_translator': '1.8.0', # تأكد من توافق الإصدارات
+                'requests': '2.25.0', # تأكد من توافق الإصدارات
+                'fake_useragent': '0.1.11', # تأكد من توافق الإصدارات
+                'stem': '1.8.0', # تأكد من توافق الإصدارات
+                'pysocks': '1.7.1',  # اسم الحزمة لـ pip install
+                'arabic_reshaper': '2.1.3', # تأكد من توافق الإصدارات
+                'python-bidi': '0.4.2',   # اسم الحزمة لـ pip install
+                'psutil': '5.8.0' # تأكد من توافق الإصدارات
             }
 
             missing_packages = []
-            for package in required_packages:
+            for package_pip_name in required_packages:
                 try:
-                    # محاولة استيراد المكتبة مباشرة
-                    __import__(package)
-                    logging.info(f"✅ تم العثور على مكتبة {package}")
+                    # اسم الحزمة عند الاستيراد قد يختلف
+                    import_name = package_pip_name
+                    if package_pip_name == 'pysocks':
+                        import_name = 'socks'  # PySocks يتم استيرادها كـ socks
+                    elif package_pip_name == 'python-bidi':
+                        import_name = 'bidi'   # python-bidi يتم استيرادها كـ bidi
+                    
+                    __import__(import_name)
+                    logging.info(f"✅ تم العثور على مكتبة {package_pip_name} (مستوردة كـ {import_name})")
                 except ImportError as e:
-                    logging.error(f"❌ لم يتم العثور على مكتبة {package}: {str(e)}")
-                    missing_packages.append(package)
+                    logging.error(f"❌ لم يتم العثور على مكتبة {package_pip_name} (محاولة استيراد {import_name}): {str(e)}")
+                    missing_packages.append(package_pip_name)
 
             if missing_packages:
-                logging.error(f"المكتبات المفقودة: {', '.join(missing_packages)}")
+                logging.error(f"المكتبات المفقودة: {', '.join(missing_packages)}. يرجى تثبيتها باستخدام pip install.")
                 return False
 
-            # التحقق من وجود Tor
-            tor_path = self.check_tor_installation()
-            if not tor_path:
-                logging.error("❌ Tor غير مثبت في النظام")
-                return False
+            # لم نعد نتحقق من تثبيت Tor هنا، بل نعتمد على توفره كخدمة.
+            # logging.info("تم تخطي التحقق من تثبيت Tor بشكل مباشر، سيتم التحقق من الخدمة لاحقاً.")
 
             # التحقق من الذاكرة المتاحة
             memory = psutil.virtual_memory()
@@ -326,39 +315,43 @@ class ChessTextProcessor:
             logging.info("✅ تم التحقق من متطلبات النظام بنجاح")
             return True
 
+        except ImportError as ie:
+            # هذا الاستثناء يجب أن يتم التعامل معه داخل الحلقة، لكن كإجراء احترازي
+            logging.error(f"فشل استيراد مكتبة ضرورية: {str(ie)}", exc_info=True)
+            return False
         except Exception as e:
-            logging.error(f"❌ فشل التحقق من متطلبات النظام: {str(e)}")
+            logging.error(f"❌ فشل التحقق من متطلبات النظام: {str(e)}", exc_info=True)
             return False
     
-    def check_tor_installation(self):
-        """التحقق من تثبيت Tor"""
-        try:
-            # محاولة العثور على مسار Tor
-            tor_path = subprocess.run(
-                ['which', 'tor'],
-                capture_output=True,
-                text=True
-            ).stdout.strip()
+    # def check_tor_installation(self): # تم حذف هذه الدالة، الاعتماد على الخدمة الحالية
+    #     """التحقق من تثبيت Tor"""
+    #     try:
+    #         # محاولة العثور على مسار Tor
+    #         tor_path = subprocess.run(
+    #             ['which', 'tor'],
+    #             capture_output=True,
+    #             text=True
+    #         ).stdout.strip()
 
-            if not tor_path:
-                return False
+    #         if not tor_path:
+    #             return False
 
-            # التحقق من الإصدار
-            tor_version = subprocess.run(
-                ['tor', '--version'],
-                capture_output=True,
-                text=True
-            ).stdout
+    #         # التحقق من الإصدار
+    #         tor_version = subprocess.run(
+    #             ['tor', '--version'],
+    #             capture_output=True,
+    #             text=True
+    #         ).stdout
 
-            if tor_version:
-                logging.info(f"إصدار Tor: {tor_version.split()[2]}")
-                return tor_path
+    #         if tor_version:
+    #             logging.info(f"إصدار Tor: {tor_version.split()[2]}")
+    #             return tor_path
 
-            return False
+    #         return False
 
-        except Exception as e:
-            logging.error(f"خطأ في التحقق من تثبيت Tor: {str(e)}")
-            return False
+    #     except Exception as e:
+    #         logging.error(f"خطأ في التحقق من تثبيت Tor: {str(e)}")
+    #         return False
 
     def check_system_resources(self):
         """التحقق من موارد النظام"""
@@ -391,7 +384,7 @@ class ChessTextProcessor:
             return True
 
         except Exception as e:
-            logging.error(f"خطأ في التحقق من موارد النظام: {str(e)}")
+            logging.error(f"خطأ في التحقق من موارد النظام: {str(e)}", exc_info=True)
             return False
 
     def check_user_permissions(self):
@@ -424,8 +417,11 @@ class ChessTextProcessor:
 
             return True
 
+        except OSError as ose:
+            logging.warning(f"خطأ في نظام التشغيل أثناء التحقق من الصلاحيات (مثل إنشاء مجلد أو ملف): {ose}", exc_info=True)
+            return False
         except Exception as e:
-            logging.error(f"خطأ في التحقق من الصلاحيات: {str(e)}")
+            logging.error(f"خطأ غير متوقع في التحقق من الصلاحيات: {str(e)}", exc_info=True)
             return False
     
     def get_system_info(self):
@@ -457,80 +453,141 @@ class ChessTextProcessor:
             
             return info
 
+        except psutil.Error as pse:
+            logging.error(f"خطأ متعلق بـ psutil أثناء جمع معلومات النظام: {pse}", exc_info=True)
+            return None
         except Exception as e:
-            logging.error(f"خطأ في جمع معلومات النظام: {str(e)}")
+            logging.error(f"خطأ غير متوقع في جمع معلومات النظام: {str(e)}", exc_info=True)
             return None
     
     def setup_translators(self):
-        """إعداد المترجمين مع تحسينات الأمان"""
+        """إعداد المترجمين مع تحسينات الأمان ودعم MyMemoryTranslator."""
         try:
             # تعطيل IPv6
             requests.packages.urllib3.util.connection.HAS_IPV6 = False
             
-            self.translators = []
+            self.translators = [] # List to hold initialized translator instances
+            translator_types = [GoogleTranslator, MyMemoryTranslator] # Translator classes to try
             
-            # إعداد قائمة البروكسيات المتنوعة
+            # إعداد قائمة البروكسيات المتنوعة (كما كانت معرفة سابقاً)
+            # These are the proxy configurations that will be attempted with each translator type.
+            # 'None' represents a direct connection (no proxy).
             proxy_configs = [
-                {
+                { # TOR SOCKS proxy on default port 9050
                     'http': 'socks5h://127.0.0.1:9050',
                     'https': 'socks5h://127.0.0.1:9050'
                 },
-                {
+                { # TOR SOCKS proxy often used by TOR Browser on port 9150
                     'http': 'socks5h://127.0.0.1:9150',
                     'https': 'socks5h://127.0.0.1:9150'
                 },
-                None  # مترجم مباشر للطوارئ
+                None  # مترجم مباشر للطوارئ (Direct connection attempt)
             ]
 
-            # إنشاء مترجم لكل تكوين بروكسي
-            for proxy in proxy_configs:
-                try:
-                    translator = GoogleTranslator(
-                        source='en',
-                        target='ar',
-                        proxies=proxy,
-                        timeout=30
-                    )
-                    
-                    if hasattr(translator, 'session'):
-                        # تكوين الجلسة
-                        translator.session.verify = True
-                        translator.session.trust_env = False
-                        translator.session.headers.update(self.get_advanced_headers())
+            # Iterate through each proxy configuration and then through each translator type.
+            for proxy_config in proxy_configs: 
+                for translator_class in translator_types:
+                    try:
+                        translator_instance_name = translator_class.__name__
+                        logging.info(f"محاولة إعداد {translator_instance_name} مع بروكسي: {proxy_config if proxy_config else 'مباشر'}")
+
+                        # Initialize MyMemoryTranslator
+                        if translator_class == MyMemoryTranslator:
+                            translator = translator_class(
+                                source='en', 
+                                target='ar',
+                                proxies=proxy_config, # Pass proxy config. Behavior depends on deep_translator's implementation for MyMemory.
+                                timeout=30
+                            )
+                            # ملاحظة: MyMemoryTranslator قد يتطلب تكوينًا مختلفًا للبروكسي إذا لم يتم تمريره عبر deep_translator
+                            # إذا كان MyMemoryTranslator لا يدعم proxies مباشرة في deep_translator, 
+                            # قد تحتاج session.proxies إلى التعيين يدويًا إذا كان ذلك ممكنًا.
+                        # Initialize GoogleTranslator
+                        else: # GoogleTranslator
+                            translator = translator_class(
+                                source='en', 
+                                target='ar', 
+                                proxies=proxy_config, # Pass proxy config. GoogleTranslator in deep_translator uses requests.Session.
+                                timeout=30
+                            )
                         
-                        # إعداد محاولات إعادة الاتصال
-                        adapter = requests.adapters.HTTPAdapter(
-                            pool_connections=5,
-                            pool_maxsize=10,
-                            max_retries=3,
-                            pool_block=False
-                        )
-                        translator.session.mount('http://', adapter)
-                        translator.session.mount('https://', adapter)
-                    
-                    # اختبار المترجم
-                    test_result = translator.translate("test")
-                    if test_result:
-                        self.translators.append(translator)
-                        logging.info(f"تم إضافة مترجم جديد (بروكسي: {proxy})")
-                    
-                except Exception as e:
-                    logging.warning(f"فشل في إعداد المترجم مع البروكسي {proxy}: {str(e)}")
-                    continue
+                        # Configure session for translators that use requests.Session (like GoogleTranslator)
+                        if hasattr(translator, 'session'): # GoogleTranslator لديه session
+                            translator.session.verify = True # Verify SSL certificates
+                            translator.session.trust_env = False # Important for ensuring proxy usage if set
+                            translator.session.headers.update(self.get_advanced_headers())
+                            adapter = requests.adapters.HTTPAdapter(
+                                pool_connections=5,
+                                pool_maxsize=10,
+                                max_retries=3, # محاولات إعادة الاتصال على مستوى الجلسة
+                                pool_block=False
+                            )
+                            translator.session.mount('http://', adapter)
+                            translator.session.mount('https://', adapter)
+                        elif translator_class == MyMemoryTranslator:
+                            # MyMemoryTranslator قد لا يستخدم session بنفس الطريقة.
+                            # إذا كنت بحاجة إلى تمرير بروكسي ولم يتم ذلك عبر deep_translator,
+                            # قد تحتاج إلى طريقة أخرى (مثلاً, إذا كانت المكتبة تسمح بتمرير session مخصصة).
+                            # حاليًا, نعتمد على ما يوفره deep_translator.
+                            pass
+                        
+                        # اختبار المترجم
+                        test_text = "test"
+                        test_translation = translator.translate(test_text)
+                        
+                        # MyMemoryTranslator يمكن أن يعيد قائمة أو None
+                        if translator_class == MyMemoryTranslator and isinstance(test_translation, list):
+                            test_translation = test_translation[0] if test_translation else None
+                        
+                        if test_translation and isinstance(test_translation, str):
+                            self.translators.append(translator)
+                            logging.info(f"✅ تم إضافة {translator_instance_name} (بروكسي: {proxy_config if proxy_config else 'مباشر'}) بنجاح بعد الاختبار.")
+                        else:
+                            logging.warning(f"⚠️ فشل في الحصول على ترجمة اختبار صالحة من {translator_instance_name} (بروكسي: {proxy_config if proxy_config else 'مباشر'}). الرد: {test_translation}")
 
-            if not self.translators:
-                # إضافة مترجم مباشر كحل أخير
-                self.translators.append(GoogleTranslator(source='en', target='ar'))
-                logging.warning("تم إعداد مترجم مباشر فقط")
+                    except requests.exceptions.RequestException as re:
+                        logging.warning(f"❌ خطأ اتصال أثناء إعداد/اختبار {translator_class.__name__} مع البروكسي {proxy_config if proxy_config else 'مباشر'}: {str(re)}", exc_info=True)
+                    except Exception as e:
+                        logging.warning(f"❌ فشل في إعداد {translator_class.__name__} مع البروكسي {proxy_config if proxy_config else 'مباشر'}: {str(e)}", exc_info=True)
+                        continue
             
-            self.current_translator_index = 0
-            logging.info(f"تم إعداد {len(self.translators)} مترجم بنجاح")
+            if not self.translators:
+                # محاولة أخيرة: GoogleTranslator مباشر
+                try:
+                    logging.info("لم يتم إعداد أي مترجم. محاولة أخيرة مع GoogleTranslator مباشر...")
+                    gt = GoogleTranslator(source='en', target='ar')
+                    # اختبار بسيط للمترجم الاحتياطي
+                    if gt.translate("test"):
+                        self.translators.append(gt)
+                        logging.warning("⚠️ تم تكوين GoogleTranslator مباشر فقط كحل أخير.")
+                    else:
+                         logging.error("🛑 حرج: فشل المترجم الاحتياطي GoogleTranslator المباشر أيضًا في التهيئة بعد الاختبار.", exc_info=True) # Add exc_info
+                except Exception as e:
+                    logging.error(f"🛑 حرج: فشل في تهيئة المترجم الاحتياطي GoogleTranslator المباشر: {str(e)}", exc_info=True)
 
-        except Exception as e:
-            logging.error(f"خطأ في إعداد المترجمين: {str(e)}")
-            # إعداد مترجم واحد للطوارئ
-            self.translators = [GoogleTranslator(source='en', target='ar')]
             self.current_translator_index = 0
+            if self.translators:
+                logging.info(f"✅ تم إعداد {len(self.translators)} مترجم بنجاح.")
+            else:
+                logging.error("🛑 لم يتمكن من إعداد أي مترجم. لن تعمل الترجمة. تحقق من إعدادات الشبكة والبروكسي.")
+
+        except Exception as e: # خطأ عام في setup_translators
+            logging.error(f"❌ خطأ كبير في دالة setup_translators: {str(e)}", exc_info=True)
+            # تأكد من وجود self.translators كقائمة فارغة على الأقل
+            if not hasattr(self, 'translators'):
+                 self.translators = []
+            if not self.translators: # إذا فشل كل شيء، حاول إضافة مترجم مباشر واحد كملجأ أخير
+                try:
+                    gt_direct = GoogleTranslator(source='en', target='ar')
+                    if gt_direct.translate("final fallback test"):
+                        self.translators.append(gt_direct)
+                        logging.warning("تم اللجوء إلى إضافة GoogleTranslator مباشر بسبب خطأ كبير في setup_translators.")
+                    else:
+                        logging.error("فشل اختبار الملاذ الأخير GoogleTranslator.", exc_info=True)
+                except Exception as final_fallback_e:
+                    logging.error(f"فشل حتى الملاذ الأخير لإضافة GoogleTranslator: {final_fallback_e}", exc_info=True)
+            self.current_translator_index = 0
+
 
     def setup_logging(self):
         """إعداد التسجيل مع تنسيق متقدم"""
@@ -576,8 +633,12 @@ class ChessTextProcessor:
 
             return True
 
+        except OSError as ose:
+            print(f"خطأ في نظام التشغيل أثناء إعداد التسجيل (مثل إنشاء مجلد السجلات): {ose}")
+            # لا يمكن استخدام logging هنا إذا فشل إعداده
+            return False
         except Exception as e:
-            print(f"خطأ في إعداد التسجيل: {str(e)}")
+            print(f"خطأ غير متوقع في إعداد التسجيل: {str(e)}")
             return False
     
     def setup_proxies(self):
@@ -617,7 +678,7 @@ class ChessTextProcessor:
             logging.info(f"تم إعداد {len(self.proxies)} بروكسي")
             
         except Exception as e:
-            logging.error(f"خطأ في إعداد البروكسيات: {str(e)}")
+            logging.error(f"خطأ في إعداد البروكسيات: {str(e)}", exc_info=True)
             # إعداد اتصال مباشر كحل طوارئ
             self.proxies = [{
                 'url': None,
@@ -645,8 +706,14 @@ class ChessTextProcessor:
                 logging.info(f"بروكسي {proxy_url} يعمل بنجاح")
                 return True
 
+        except requests.exceptions.Timeout:
+            logging.warning(f"انتهت مهلة اختبار البروكسي {proxy_url}", exc_info=True)
+        except requests.exceptions.ConnectionError:
+            logging.warning(f"خطأ اتصال عند اختبار البروكسي {proxy_url}", exc_info=True)
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"فشل اختبار البروكسي {proxy_url} بسبب خطأ طلب: {str(e)}", exc_info=True)
         except Exception as e:
-            logging.warning(f"فشل اختبار البروكسي {proxy_url}: {str(e)}")
+            logging.warning(f"فشل اختبار البروكسي {proxy_url} بسبب خطأ غير متوقع: {str(e)}", exc_info=True)
 
         return False
 
@@ -661,7 +728,8 @@ class ChessTextProcessor:
             
             # إذا كان البروكسي من نوع Tor، نقوم بتجديد المسار
             if current_proxy['type'] == 'tor':
-                self.renew_tor_circuit()
+                if not self.renew_tor_circuit(): # استدعاء الدالة المحدثة
+                    logging.warning("فشل تجديد دائرة Tor، قد يستمر استخدام الدائرة القديمة أو بروكسي آخر.")
                 
             # تأخير عشوائي قبل استخدام البروكسي الجديد
             time.sleep(random.uniform(1, 3))
@@ -670,9 +738,18 @@ class ChessTextProcessor:
             return True
             
         except Exception as e:
-            logging.error(f"خطأ في تدوير البروكسي: {str(e)}")
-            # العودة للبروكسي السابق في حالة الفشل
-            self.current_proxy_index = self.proxies.index(previous_proxy)
+            logging.error(f"خطأ في تدوير البروكسي: {str(e)}", exc_info=True)
+            # العودة للبروكسي السابق في حالة الفشل، إذا كان ذلك ممكناً وآمناً
+            try:
+                self.current_proxy_index = self.proxies.index(previous_proxy)
+            except ValueError: # previous_proxy قد لا يكون موجوداً إذا تم تعديل القائمة
+                logging.error("لم يتمكن من العودة إلى البروكسي السابق بعد فشل التدوير.")
+                # قد يكون من الأفضل اختيار بروكسي عشوائي أو العودة إلى البروكسي الأول
+                if self.proxies:
+                    self.current_proxy_index = 0
+                else: # لا يوجد بروكسيات متاحة
+                    logging.critical("لا توجد بروكسيات متاحة بعد فشل التدوير الكارثي!")
+                    # هنا يجب أن يكون هناك تعامل حرج، ربما إنهاء البرنامج أو محاولة وضع الطوارئ
             return False
     
     def translate_with_retry(self, text, max_retries=5):
@@ -685,46 +762,72 @@ class ChessTextProcessor:
 
         for attempt in range(max_retries):
             try:
-                # تجديد اتصال Tor قبل كل محاولة
+                # تجديد اتصال Tor قبل كل محاولة إذا لم تكن المحاولة الأولى
                 if attempt > 0:
-                    self.renew_tor_circuit()
-                    time.sleep(2)  # انتظار بعد تجديد المسار
+                    logging.info(f"محاولة الترجمة رقم {attempt + 1}. تجديد دائرة Tor...")
+                    if not self.renew_tor_circuit(): # استدعاء الدالة المحدثة
+                        logging.warning("فشل تجديد دائرة Tor، الاستمرار بالمحاولة على أي حال.")
+                    time.sleep(random.uniform(1, 3)) # انتظار قصير بعد تجديد المسار
 
                 # اختيار المترجم
-                translator = self.translators[self.current_translator_index]
+                if not self.translators: # تحقق حاسم (Critical check: if no translators are available)
+                    logging.critical("لا يوجد مترجمون مهيئون. لا يمكن المتابعة مع الترجمة.")
+                    return original_text # أو إثارة استثناء أعلى (Return original text or raise a higher-level exception)
                 
-                # تحديث الجلسة والهيدرز
-                if hasattr(translator, 'session'):
-                    current_proxy = self.proxies[self.current_proxy_index]
-                    if current_proxy['url']:
-                        translator.session.proxies = {
-                            'http': current_proxy['url'],
-                            'https': current_proxy['url']
-                        }
-                    translator.session.headers.update(self.get_advanced_headers())
-                    translator.session.headers['X-Attempt'] = str(attempt)
+                # Select the current translator and proxy based on their respective indices.
+                translator = self.translators[self.current_translator_index]
+                translator_name = translator.__class__.__name__
+                current_proxy_name = self.proxies[self.current_proxy_index]['name'] if self.proxies else "مباشر"
+                
+                logging.info(f"محاولة الترجمة باستخدام {translator_name} عبر {current_proxy_name} (محاولة {attempt + 1}/{max_retries})")
 
-                # محاولة الترجمة
+                # تحديث الجلسة والهيدرز (Update session and headers for the current attempt)
+                if hasattr(translator, 'session'): # If the translator instance has a 'session' attribute (like GoogleTranslator)
+                    current_proxy_details = self.proxies[self.current_proxy_index]
+                    if current_proxy_details and current_proxy_details['url']: # If a proxy URL is configured
+                        translator.session.proxies = { # Set the proxy for the session
+                            'http': current_proxy_details['url'],
+                            'https': current_proxy_details['url']
+                        }
+                    else: # إذا كان البروكسي None أو لا يحتوي على URL (الاتصال المباشر) (If proxy is None or no URL, i.e., direct connection)
+                        translator.session.proxies = {} # مسح أي بروكسيات سابقة من الجلسة (Clear any previous proxies from the session)
+                    translator.session.headers.update(self.get_advanced_headers())
+                    translator.session.headers['X-Attempt'] = str(attempt +1) # Add attempt number to headers
+
+                # محاولة الترجمة (Attempt translation)
                 result = translator.translate(text.strip())
+
+                # معالجة رد MyMemoryTranslator الذي قد يكون قائمة
+                if translator_name == "MyMemoryTranslator" and isinstance(result, list):
+                    result = result[0] if result else None
                 
                 if result and isinstance(result, str):
+                    logging.info(f"نجحت الترجمة باستخدام {translator_name} عبر {current_proxy_name}.")
                     self.consecutive_failures = 0  # إعادة تعيين عداد الفشل
                     return result
+                else:
+                    # سجل إذا لم يكن هناك خطأ ولكن النتيجة غير صالحة
+                    logging.warning(f"الترجمة باستخدام {translator_name} عبر {current_proxy_name} أعادت نتيجة غير متوقعة أو فارغة: {result}")
+                    # لا نعتبر هذا فشلاً يستدعي تدوير المترجم مباشرة ما لم يثر استثناء
 
             except Exception as e:
                 last_error = str(e)
-                logging.warning(f"فشل المحاولة {attempt + 1}: {last_error}")
+                translator_name_in_error = self.translators[self.current_translator_index].__class__.__name__ if self.translators else "غير معروف"
+                proxy_name_in_error = self.proxies[self.current_proxy_index]['name'] if self.proxies else "مباشر"
+                logging.warning(f"فشل المحاولة {attempt + 1} للترجمة باستخدام {translator_name_in_error} عبر {proxy_name_in_error}: {last_error}", exc_info=True)
                 
                 # زيادة عداد الفشل
                 self.consecutive_failures += 1
                 
                 # تدوير المترجم والبروكسي بعد عدد معين من المحاولات الفاشلة
-                if self.consecutive_failures >= 3:
-                    self.rotate_translator()
-                    self.rotate_proxy()
-                    self.consecutive_failures = 0
+                # If consecutive failures reach the max limit, rotate translator and proxy.
+                if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES: # استخدام ثابت معرف
+                    logging.info(f"وصل إلى {self.consecutive_failures} فشل متتالي. محاولة تدوير المترجم والبروكسي.")
+                    self.rotate_translator() # Switch to the next available translator
+                    self.rotate_proxy()    # Switch to the next available proxy configuration
+                    # self.consecutive_failures = 0 # يتم الآن إعادة التعيين داخل rotate_translator (Reset counter is handled in rotate_translator)
                 
-                # تأخير تصاعدي بين المحاولات
+                # تأخير تصاعدي بين المحاولات (Exponential backoff-like delay)
                 time.sleep((attempt + 1) * 2)
                 continue
 
@@ -732,38 +835,71 @@ class ChessTextProcessor:
         logging.error(f"فشلت جميع محاولات الترجمة. آخر خطأ: {last_error}")
         return original_text
 
+    def rotate_translator(self):
+        """تدوير إلى المترجم التالي المتاح."""
+        # This method switches to the next translator in the `self.translators` list.
+        # It's called when the current translator fails `MAX_CONSECUTIVE_FAILURES` times.
+        if not self.translators or len(self.translators) <= 1:
+            logging.warning("⚠️ لا يوجد عدد كاف من المترجمين للتدوير.")
+            # إذا كان هناك مترجم واحد أو لا يوجد، حاول تجديد دائرة TOR كإجراء احتياطي.
+            # If only one or no translator, try renewing TOR circuit as a fallback action if current proxy is TOR.
+            if self.proxies and self.proxies[self.current_proxy_index]['type'] == 'tor':
+                 self.renew_tor_circuit() # Attempt to get a new IP via TOR
+            return
+
+        previous_translator_name = self.translators[self.current_translator_index].__class__.__name__
+        # Cycle to the next translator index
+        self.current_translator_index = (self.current_translator_index + 1) % len(self.translators)
+        current_translator_name = self.translators[self.current_translator_index].__class__.__name__
+        
+        logging.info(f"🔄 تم تدوير المترجم من {previous_translator_name} إلى {current_translator_name}")
+        self.consecutive_failures = 0 # إعادة تعيين عداد الفشل بعد تبديل المترجم (Reset failure counter after switching)
+        
+        # قد يكون من الجيد أيضًا الحصول على دائرة TOR جديدة عند تبديل المترجمين
+        # إذا كان البروكسي الحالي هو TOR، لتقليل فرص الحظر.
+        # Also renew TOR circuit if the current proxy is TOR, to potentially get a new IP.
+        current_proxy_config = self.proxies[self.current_proxy_index]
+        if current_proxy_config and current_proxy_config.get('type') == 'tor':
+            logging.info("🔄 تجديد دائرة Tor كجزء من تدوير المترجم.")
+            self.renew_tor_circuit()
+
     def process_text_block(self, text, chunk_size=CHUNK_SIZE):
         """معالجة النص مع الحفاظ على العناصر المهمة"""
         if not text or not text.strip():
             return text
 
         try:
-            # الأنماط التي يجب حفظها
+            # الأنماط التي يجب حفظها (Patterns for text elements to be preserved from translation)
             preserved_patterns = {
-                'page_header': r'=== الصفحة \d+ ===',
-                'chapter': r'CHAPTER \w+',
-                'numbers': r'\d+\.',
-                'special_chars': r'[•\-\[\]\(\)]',
-                'chess_moves': r'\d+\.\s*[KQRBN][a-h]?[1-8]?x?[a-h][1-8][+#]?',
-                'dates': r'\d{4}[-/]\d{2}[-/]\d{2}',
-                'urls': r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+                'page_header': r'=== الصفحة \d+ ===',  # Page headers like "=== الصفحة 123 ==="
+                'chapter': r'CHAPTER \w+',  # Chapter titles like "CHAPTER Introduction"
+                'numbers': r'\d+\.',  # Numbered list items like "1.", "2."
+                'special_chars': r'[•\-\[\]\(\)]',  # Special characters like bullets, hyphens, brackets
+                'chess_moves': r'\d+\.\s*[KQRBN][a-h]?[1-8]?x?[a-h][1-8][+#]?',  # Chess notations
+                'dates': r'\d{4}[-/]\d{2}[-/]\d{2}',  # Dates like YYYY-MM-DD or YYYY/MM/DD
+                'urls': r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+' # URLs
             }
 
-            # حفظ العناصر المهمة
+            # حفظ العناصر المهمة (Save important elements by replacing them with placeholders)
+            # This is done to prevent the translator from altering specific structured text.
             preserved = []
             for pattern_name, pattern in preserved_patterns.items():
                 matches = re.finditer(pattern, text, re.MULTILINE)
                 for match in matches:
+                    placeholder = f"[PRESERVED_{len(preserved)}]" # Create a unique placeholder
                     preserved.append({
-                        'start': match.start(),
-                        'end': match.end(),
-                        'content': match.group(),
-                        'type': pattern_name,
-                        'placeholder': f"[PRESERVED_{len(preserved)}]"
+                        'start': match.start(), # Original start index (will be shifted after replacements)
+                        'end': match.end(),     # Original end index
+                        'content': match.group(), # The actual text content of the match
+                        'type': pattern_name,     # Type of pattern (e.g., 'url', 'chess_move')
+                        'placeholder': placeholder
                     })
-                    text = text[:match.start()] + f"[PRESERVED_{len(preserved)-1}]" + text[match.end():]
+                    # Replace the matched content with the placeholder in the main text.
+                    # This replacement shifts subsequent match indices, so direct index restoration isn't used.
+                    # Instead, placeholders are globally replaced back after translation.
+                    text = text.replace(match.group(), placeholder, 1) # Replace only the first occurrence in this iteration
 
-            # تقسيم النص إلى أجزاء
+            # تقسيم النص إلى أجزاء (Split text into chunks for translation)
             chunks = []
             current_chunk = []
             for line in text.split('\n'):
@@ -794,8 +930,8 @@ class ChessTextProcessor:
             return translated_text
 
         except Exception as e:
-            logging.error(f"خطأ في معالجة النص: {str(e)}")
-            return text
+            logging.error(f"خطأ في معالجة النص: {str(e)}", exc_info=True)
+            return text # إعادة النص الأصلي في حالة حدوث خطأ غير معالج
 
     def smart_delay(self):
         """تأخير ذكي مع تغيير متغير"""
@@ -828,55 +964,57 @@ class ChessTextProcessor:
             with open(input_filename, 'r', encoding='utf-8') as file:
                 content = file.read()
 
-            # إنشاء المعلومات الوصفية
+            # إنشاء المعلومات الوصفية (Create metadata for the output file)
             metadata = self.create_metadata()
 
-            # تقسيم المحتوى إلى صفحات
+            # تقسيم المحتوى إلى صفحات (Split content by page headers, e.g., "=== الصفحة 1 ===")
+            # The regex includes the delimiter in the split results, which is helpful.
             pages = re.split(r'(=== الصفحة \d+ ===)', content)
-            total_pages = len([p for p in pages if p.strip()])
-            translated_pages = []
-            current_page = 1
+            total_pages = len([p for p in pages if p.strip()]) # Count non-empty pages
+            translated_pages = [] # This list seems unused as pages are written directly
+            current_page_num = 1
 
-            # إنشاء ملف الترجمة
+            # إنشاء ملف الترجمة (Create the output filename with a timestamp)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_filename = os.path.join(
-                os.path.dirname(input_filename),
+                os.path.dirname(input_filename), # Save in the same directory as the input
                 f"translated_{timestamp}.txt"
             )
 
-            # كتابة المعلومات الوصفية
+            # كتابة المعلومات الوصفية (Write metadata to the output file)
             with open(output_filename, 'w', encoding='utf-8') as outfile:
                 outfile.write(metadata)
-                outfile.write("="*50 + "\n\n")
+                outfile.write("="*50 + "\n\n") # Separator
 
-                # معالجة كل صفحة
-                for i, page in enumerate(pages):
-                    if page.strip():
+                # معالجة كل صفحة (Process each page (or segment between page headers))
+                for i, page_content in enumerate(pages):
+                    if page_content.strip(): # Process only non-empty segments
                         try:
-                            logging.info(f"معالجة الصفحة {current_page} من {total_pages}")
-                            print(f"جاري معالجة الصفحة {current_page} من {total_pages}")
+                            logging.info(f"معالجة الصفحة {current_page_num} من {total_pages}")
+                            print(f"جاري معالجة الصفحة {current_page_num} من {total_pages}")
 
-                            # ترجمة الصفحة
-                            translated_page = self.process_text_block(page)
-                            translated_pages.append(translated_page)
+                            # ترجمة الصفحة (Translate the current page/segment content)
+                            translated_page_content = self.process_text_block(page_content)
+                            # translated_pages.append(translated_page_content) # Redundant if writing directly
                             
-                            # كتابة الصفحة مباشرة إلى الملف
-                            outfile.write(translated_page + "\n")
-                            outfile.flush()  # ضمان حفظ البيانات
+                            # كتابة الصفحة مباشرة إلى الملف (Write the translated page directly to the output file)
+                            outfile.write(translated_page_content + "\n")
+                            outfile.flush()  # ضمان حفظ البيانات (Ensure data is written to disk)
                             
-                            current_page += 1
+                            current_page_num += 1
                             
-                            # تدوير البروكسي كل عدة صفحات
-                            if current_page % 3 == 0:
+                            # تدوير البروكسي كل عدة صفحات (Rotate proxy every few pages to vary connection)
+                            if current_page_num % 3 == 0:
                                 self.rotate_proxy()
                                 
                         except Exception as e:
-                            logging.error(f"خطأ في معالجة الصفحة {current_page}: {str(e)}")
-                            # في حالة الخطأ، نحفظ النص الأصلي
-                            outfile.write(page + "\n")
+                            # Log error for the specific page and save the original content for that page.
+                            logging.error(f"خطأ في معالجة الصفحة {current_page_num}: {str(e)}", exc_info=True)
+                            # في حالة الخطأ، نحفظ النص الأصلي (In case of error, save the original text for this page)
+                            outfile.write(page_content + "\n")
                             outfile.flush()
 
-                # كتابة معلومات المعالجة النهائية
+                # كتابة معلومات المعالجة النهائية (Write final processing completion info)
                 completion_info = self.create_completion_info(current_page - 1)
                 outfile.write("\n" + completion_info)
 
@@ -884,8 +1022,14 @@ class ChessTextProcessor:
             print(f"✅ تم حفظ الترجمة في: {output_filename}")
             return output_filename
 
+        except FileNotFoundError as fnf_error:
+            logging.error(f"❌ خطأ: الملف غير موجود: {str(fnf_error)}", exc_info=True)
+            raise  # إعادة إثارة الخطأ ليتم التعامل معه في main
+        except OSError as os_error:
+            logging.error(f"❌ خطأ في نظام التشغيل أثناء معالجة الملف {input_filename}: {str(os_error)}", exc_info=True)
+            raise
         except Exception as e:
-            logging.error(f"خطأ في معالجة الملف: {str(e)}")
+            logging.error(f"❌ خطأ غير متوقع في معالجة الملف {input_filename}: {str(e)}", exc_info=True)
             raise
 
     def create_metadata(self):
@@ -918,33 +1062,44 @@ def main():
     processor = None
     try:
         # إنشاء المعالج
-        processor = ChessTextProcessor()
-
-        # التحقق من متطلبات النظام
-        if not processor.verify_system_requirements():
-            raise Exception("فشل التحقق من متطلبات النظام")
+        # التحقق من متطلبات النظام و Tor يتم الآن داخل مُنشئ ChessTextProcessor
+        # processor.verify_system_requirements() # This call is redundant, already in __init__
+        processor = ChessTextProcessor() # قد يثير استثناءات تتم معالجتها أدناه
 
         # تحديد مسار الملف
-        input_file = "/home/dc/Public/fml/output/document.txt"
-        if not os.path.exists(input_file):
-            raise FileNotFoundError(f"الملف غير موجود: {input_file}")
+        input_file_path = "/home/dc/Public/fml/output/document.txt" # تأكد من أن هذا المسار صحيح
+        logging.info(f"مسار ملف الإدخال المحدد: {input_file_path}")
+        if not os.path.exists(input_file_path):
+            # رسالة واضحة للمستخدم باللغة العربية
+            error_message = f"❌ خطأ فادح: ملف الإدخال '{input_file_path}' غير موجود. يرجى التأكد من صحة المسار وتوفر الملف."
+            print(error_message)
+            logging.critical(error_message) # استخدام CRITICAL للأخطاء التي تمنع البرنامج من العمل
+            sys.exit(1)
 
         # معالجة الملف
-        output_file = processor.process_file(input_file)
-        print(f"✅ تمت المعالجة بنجاح. الملف الناتج: {output_file}")
+        logging.info(f"بدء معالجة الملف: {input_file_path}")
+        output_file = processor.process_file(input_file_path)
+        # رسالة نجاح واضحة للمستخدم باللغة العربية
+        success_message = f"✅ تمت معالجة الملف بنجاح! تم حفظ الترجمة في: {output_file}"
+        print(success_message)
+        logging.info(success_message)
 
-    except FileNotFoundError as e:
-        print(f"❌ خطأ: {str(e)}")
-        logging.error(f"ملف غير موجود: {str(e)}")
+    except FileNotFoundError as e: # هذا الاستثناء يجب أن يتم التقاطه الآن داخل process_file أو عند التحقق من المسار أعلاه
+        user_message = f"❌ خطأ في العثور على ملف: {str(e)}. يرجى التحقق من اسم الملف والمسار."
+        print(user_message)
+        logging.error(user_message, exc_info=True)
         sys.exit(1)
     except Exception as e:
-        print(f"❌ حدث خطأ: {str(e)}")
-        logging.error(f"خطأ: {str(e)}", exc_info=True)
+        # رسالة خطأ عامة وواضحة للمستخدم باللغة العربية
+        user_message = f"❌ حدث خطأ فادح غير متوقع أثناء تشغيل البرنامج. تفاصيل الخطأ مسجلة. الخطأ: {str(e)}"
+        print(user_message)
+        logging.critical(user_message, exc_info=True) # استخدام CRITICAL للأخطاء الفادحة
         sys.exit(1)
     finally:
         # تنظيف الموارد
         if processor:
-            processor.cleanup()
+            # processor.cleanup() # لا توجد دالة cleanup معرفة حاليًا
+            pass
 
 if __name__ == "__main__":
     try:
