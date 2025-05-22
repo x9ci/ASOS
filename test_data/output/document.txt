@@ -1,0 +1,9 @@
+=== الصفحة 1 ===
+Hello world.
+This is a test for the translation script.
+MyMemoryTranslator should be used.
+Let's see if Tor helps.
+
+=== الصفحة 2 ===
+Another page for testing.
+Good morning.

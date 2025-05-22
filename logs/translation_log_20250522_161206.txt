@@ -1,0 +1,23 @@
+2025-05-22 16:12:06 - INFO - بدء التسجيل في: logs/translation_log_20250522_161206.txt
+2025-05-22 16:12:06 - INFO - معرف المستخدم: x9up
+2025-05-22 16:12:06 - INFO - نظام التشغيل: Linux 6.8.0
+2025-05-22 16:12:06 - INFO - بدء تهيئة المعالج...
+2025-05-22 16:12:06 - INFO - ✅ تم العثور على مكتبة deep_translator
+2025-05-22 16:12:06 - INFO - ✅ تم العثور على مكتبة requests
+2025-05-22 16:12:06 - INFO - ✅ تم العثور على مكتبة fake_useragent
+2025-05-22 16:12:06 - INFO - ✅ تم العثور على مكتبة stem
+2025-05-22 16:12:06 - INFO - ✅ تم العثور على مكتبة socks
+2025-05-22 16:12:06 - INFO - ✅ تم العثور على مكتبة arabic_reshaper
+2025-05-22 16:12:06 - INFO - ✅ تم العثور على مكتبة bidi
+2025-05-22 16:12:06 - INFO - ✅ تم العثور على مكتبة psutil
+2025-05-22 16:12:06 - INFO - إصدار Tor: 0.4.8.10.
+2025-05-22 16:12:06 - INFO - ✅ تم التحقق من متطلبات النظام بنجاح
+2025-05-22 16:12:07 - INFO - ✅ تم التحقق من خدمة Tor بنجاح
+2025-05-22 16:12:07 - ERROR - ❌ فشل في تهيئة المعالج: 'ChessTextProcessor' object has no attribute 'manage_network_settings'
+2025-05-22 16:12:07 - ERROR - خطأ: 'ChessTextProcessor' object has no attribute 'manage_network_settings'
+Traceback (most recent call last):
+  File "/app/googletran.py", line 959, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 103, in __init__
+    if not self.manage_network_settings():
+AttributeError: 'ChessTextProcessor' object has no attribute 'manage_network_settings'

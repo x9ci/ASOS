@@ -1,0 +1,101 @@
+2025-05-22 16:09:15,648 - ERROR - ❌ Tor غير مثبت في النظام
+Stack trace:
+None
+
+2025-05-22 16:09:15,648 - ERROR - ❌ فشل في تهيئة المعالج: فشل التحقق من متطلبات النظام
+Stack trace:
+None
+
+2025-05-22 16:09:15,648 - ERROR - خطأ: فشل التحقق من متطلبات النظام
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 959, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 96, in __init__
+    raise Exception("فشل التحقق من متطلبات النظام")
+Exception: فشل التحقق من متطلبات النظام
+2025-05-22 16:09:58,532 - ERROR - خطأ في التحقق من خدمة Tor: 0x01: General SOCKS server failure
+Stack trace:
+None
+
+2025-05-22 16:09:58,533 - ERROR - ❌ فشل في تهيئة المعالج: فشل في تهيئة خدمة Tor
+Stack trace:
+None
+
+2025-05-22 16:09:58,533 - ERROR - خطأ: فشل في تهيئة خدمة Tor
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 959, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 100, in __init__
+    raise Exception("فشل في تهيئة خدمة Tor")
+Exception: فشل في تهيئة خدمة Tor
+2025-05-22 16:11:38,589 - ERROR - خطأ في التحقق من خدمة Tor: 0x01: General SOCKS server failure
+Stack trace:
+None
+
+2025-05-22 16:11:38,589 - ERROR - ❌ فشل في تهيئة المعالج: فشل في تهيئة خدمة Tor
+Stack trace:
+None
+
+2025-05-22 16:11:38,589 - ERROR - خطأ: فشل في تهيئة خدمة Tor
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 975, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 116, in __init__
+    raise Exception("فشل في تهيئة خدمة Tor")
+Exception: فشل في تهيئة خدمة Tor
+2025-05-22 16:12:07,820 - ERROR - ❌ فشل في تهيئة المعالج: 'ChessTextProcessor' object has no attribute 'manage_network_settings'
+Stack trace:
+None
+
+2025-05-22 16:12:07,821 - ERROR - خطأ: 'ChessTextProcessor' object has no attribute 'manage_network_settings'
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 959, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 103, in __init__
+    if not self.manage_network_settings():
+AttributeError: 'ChessTextProcessor' object has no attribute 'manage_network_settings'
+2025-05-22 16:13:31,730 - ERROR - ❌ فشل في تهيئة المعالج: 'ChessTextProcessor' object has no attribute 'setup_advanced_connection'
+Stack trace:
+None
+
+2025-05-22 16:13:31,730 - ERROR - خطأ: 'ChessTextProcessor' object has no attribute 'setup_advanced_connection'
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 955, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 103, in __init__
+    if not self.setup_advanced_connection():
+AttributeError: 'ChessTextProcessor' object has no attribute 'setup_advanced_connection'
+2025-05-22 16:14:33,528 - ERROR - ❌ فشل في تهيئة المعالج: 'ChessTextProcessor' object has no attribute 'get_fallback_headers'
+Stack trace:
+None
+
+2025-05-22 16:14:33,528 - ERROR - خطأ: 'ChessTextProcessor' object has no attribute 'get_fallback_headers'
+Stack trace:
+None
+Traceback (most recent call last):
+  File "/app/googletran.py", line 107, in __init__
+    self.user_agents = UserAgent(verify_ssl=False)
+TypeError: FakeUserAgent.__init__() got an unexpected keyword argument 'verify_ssl'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/googletran.py", line 951, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 111, in __init__
+    self.headers = self.get_fallback_headers()
+AttributeError: 'ChessTextProcessor' object has no attribute 'get_fallback_headers'
+2025-05-22 16:16:07,074 - ERROR - ملف غير موجود: الملف غير موجود: /home/dc/Public/fml/output/document.txt
+Stack trace:
+None
+

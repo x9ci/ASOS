@@ -1,0 +1,23 @@
+2025-05-22 16:13:30 - INFO - بدء التسجيل في: logs/translation_log_20250522_161330.txt
+2025-05-22 16:13:30 - INFO - معرف المستخدم: x9up
+2025-05-22 16:13:30 - INFO - نظام التشغيل: Linux 6.8.0
+2025-05-22 16:13:30 - INFO - بدء تهيئة المعالج...
+2025-05-22 16:13:30 - INFO - ✅ تم العثور على مكتبة deep_translator
+2025-05-22 16:13:30 - INFO - ✅ تم العثور على مكتبة requests
+2025-05-22 16:13:30 - INFO - ✅ تم العثور على مكتبة fake_useragent
+2025-05-22 16:13:30 - INFO - ✅ تم العثور على مكتبة stem
+2025-05-22 16:13:30 - INFO - ✅ تم العثور على مكتبة socks
+2025-05-22 16:13:30 - INFO - ✅ تم العثور على مكتبة arabic_reshaper
+2025-05-22 16:13:30 - INFO - ✅ تم العثور على مكتبة bidi
+2025-05-22 16:13:30 - INFO - ✅ تم العثور على مكتبة psutil
+2025-05-22 16:13:30 - INFO - إصدار Tor: 0.4.8.10.
+2025-05-22 16:13:30 - INFO - ✅ تم التحقق من متطلبات النظام بنجاح
+2025-05-22 16:13:31 - INFO - ✅ تم التحقق من خدمة Tor بنجاح
+2025-05-22 16:13:31 - ERROR - ❌ فشل في تهيئة المعالج: 'ChessTextProcessor' object has no attribute 'setup_advanced_connection'
+2025-05-22 16:13:31 - ERROR - خطأ: 'ChessTextProcessor' object has no attribute 'setup_advanced_connection'
+Traceback (most recent call last):
+  File "/app/googletran.py", line 955, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 103, in __init__
+    if not self.setup_advanced_connection():
+AttributeError: 'ChessTextProcessor' object has no attribute 'setup_advanced_connection'

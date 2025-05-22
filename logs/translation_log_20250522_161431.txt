@@ -1,0 +1,35 @@
+2025-05-22 16:14:31 - INFO - بدء التسجيل في: logs/translation_log_20250522_161431.txt
+2025-05-22 16:14:31 - INFO - معرف المستخدم: x9up
+2025-05-22 16:14:31 - INFO - نظام التشغيل: Linux 6.8.0
+2025-05-22 16:14:31 - INFO - بدء تهيئة المعالج...
+2025-05-22 16:14:31 - INFO - ✅ تم العثور على مكتبة deep_translator
+2025-05-22 16:14:31 - INFO - ✅ تم العثور على مكتبة requests
+2025-05-22 16:14:31 - INFO - ✅ تم العثور على مكتبة fake_useragent
+2025-05-22 16:14:31 - INFO - ✅ تم العثور على مكتبة stem
+2025-05-22 16:14:31 - INFO - ✅ تم العثور على مكتبة socks
+2025-05-22 16:14:31 - INFO - ✅ تم العثور على مكتبة arabic_reshaper
+2025-05-22 16:14:31 - INFO - ✅ تم العثور على مكتبة bidi
+2025-05-22 16:14:31 - INFO - ✅ تم العثور على مكتبة psutil
+2025-05-22 16:14:31 - INFO - إصدار Tor: 0.4.8.10.
+2025-05-22 16:14:31 - INFO - ✅ تم التحقق من متطلبات النظام بنجاح
+2025-05-22 16:14:32 - INFO - ✅ تم التحقق من خدمة Tor بنجاح
+2025-05-22 16:14:33 - INFO - بروكسي socks5h://127.0.0.1:9050 يعمل بنجاح
+2025-05-22 16:14:33 - INFO - تم إضافة بروكسي: Tor Primary
+2025-05-22 16:14:33 - WARNING - فشل اختبار البروكسي socks5h://127.0.0.1:9150: SOCKSHTTPSConnectionPool(host='api.ipify.org', port=443): Max retries exceeded with url: /?format=json (Caused by NewConnectionError('<urllib3.contrib.socks.SOCKSHTTPSConnection object at 0x7fa0375c6e90>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-05-22 16:14:33 - INFO - تم إعداد 2 بروكسي
+2025-05-22 16:14:33 - WARNING - فشل في إعداد User-Agent المتقدم: FakeUserAgent.__init__() got an unexpected keyword argument 'verify_ssl'
+2025-05-22 16:14:33 - ERROR - ❌ فشل في تهيئة المعالج: 'ChessTextProcessor' object has no attribute 'get_fallback_headers'
+2025-05-22 16:14:33 - ERROR - خطأ: 'ChessTextProcessor' object has no attribute 'get_fallback_headers'
+Traceback (most recent call last):
+  File "/app/googletran.py", line 107, in __init__
+    self.user_agents = UserAgent(verify_ssl=False)
+TypeError: FakeUserAgent.__init__() got an unexpected keyword argument 'verify_ssl'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/googletran.py", line 951, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 111, in __init__
+    self.headers = self.get_fallback_headers()
+AttributeError: 'ChessTextProcessor' object has no attribute 'get_fallback_headers'

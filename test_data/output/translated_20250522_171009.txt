@@ -1,0 +1,24 @@
+Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-05-22 17:10:09
+Current User's Login: x9up
+System Info: Linux 6.8.0
+Processing Started: 2025-05-22 17:10:09
+Translator Version: deep-translator
+Proxy Configuration: Tor Primary
+
+==================================================
+
+[PRESERVED _1[PRESERVED _2]PRESERVED _0]
+مرحبًا بالعالم.
+هذا اختبار لنص الترجمة.
+يجب استخدام MyMemoryTranslator.
+دعونا نرى ما إذا كان Tor يساعد.
+[PRESERVED _1[PRESERVED _2]PRESERVED _0]
+صفحة أخرى للاختبار.
+صباح الخير.
+
+
+==================================================
+Processing Completed: 2025-05-22 17:10:28
+Total Pages Processed: 4
+Translation Status: Complete
+==================================================

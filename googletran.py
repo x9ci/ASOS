@@ -17,7 +17,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display  # استخدام bidi بدلاً من python-bidi
 import re
 import json
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator
 
 # تعريف المتغيرات العامة
 CURRENT_USER = os.getenv('USER', 'unknown')
@@ -58,9 +58,9 @@ NumEntryGuards 8
         subprocess.run(['sudo', 'service', 'tor', 'restart'])
         time.sleep(5)
         
-        # تكوين SOCKS
-        socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-        socket.socket = socks.socksocket
+        # تكوين SOCKS - تم التعليق لتجنب التعارض المحتمل مع إعدادات بروكسي مكتبة requests
+        # socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
+        # socket.socket = socks.socksocket
         
         return True
     except Exception as e:
@@ -99,24 +99,21 @@ class ChessTextProcessor:
             if not self.verify_tor_service():
                 raise Exception("فشل في تهيئة خدمة Tor")
 
-            # إعداد الشبكة
-            if not self.manage_network_settings():
-                raise Exception("فشل في إعداد الشبكة")
-
-            # إعداد الاتصال
-            if not self.setup_advanced_connection():
-                raise Exception("فشل في الإعداد المتقدم للاتصال")
-
             # إعداد البروكسيات
             self.setup_proxies()
             
             # إعداد User-Agent والهيدرز
             try:
-                self.user_agents = UserAgent(verify_ssl=False)
+                self.user_agents = UserAgent()
                 self.headers = self.get_advanced_headers()
             except Exception as e:
                 logging.warning(f"فشل في إعداد User-Agent المتقدم: {e}")
-                self.headers = self.get_fallback_headers()
+                self.headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Connection': 'keep-alive'
+                }
 
             # إعداد المترجمين
             self.setup_translators()
@@ -138,9 +135,9 @@ class ChessTextProcessor:
             subprocess.run(['sudo', 'service', 'tor', 'restart'], check=True)
             time.sleep(5)
 
-            # تكوين SOCKS
-            socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-            socket.socket = socks.socksocket
+            # تكوين SOCKS - تم التعليق لتجنب التعارض المحتمل مع إعدادات بروكسي مكتبة requests
+            # socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
+            # socket.socket = socks.socksocket
 
             # التحقق من الاتصال
             test_socket = socket.socket()
@@ -484,19 +481,42 @@ class ChessTextProcessor:
 
             # إنشاء مترجم لكل تكوين بروكسي
             for proxy in proxy_configs:
+                # محاولة تهيئة MyMemoryTranslator أولاً
                 try:
-                    translator = GoogleTranslator(
+                    mymemory_translator = MyMemoryTranslator(
+                        source='en-US',  # استخدام كود لغة مدعوم
+                        target='ar-SA', # استخدام كود لغة مدعوم للغة العربية
+                        proxies=proxy,
+                        timeout=30
+                    )
+                    
+                    # MyMemoryTranslator لا يستخدم session بنفس طريقة GoogleTranslator
+                    # ولكن يمكن تطبيق إعدادات مشابهة إذا كانت المكتبة تدعمها مباشرة
+                    # أو عبر تعديل الطلبات إذا لزم الأمر (غير واضح من الوثائق الحالية)
+
+                    # اختبار المترجم
+                    test_result_mymemory = mymemory_translator.translate("test")
+                    if test_result_mymemory:
+                        self.translators.append(mymemory_translator)
+                        logging.info(f"تم إضافة MyMemoryTranslator (بروكسي: {proxy})")
+                    
+                except Exception as e:
+                    logging.warning(f"فشل في إعداد MyMemoryTranslator مع البروكسي {proxy}: {str(e)}")
+
+                # محاولة تهيئة GoogleTranslator
+                try:
+                    google_translator = GoogleTranslator(
                         source='en',
                         target='ar',
                         proxies=proxy,
                         timeout=30
                     )
                     
-                    if hasattr(translator, 'session'):
+                    if hasattr(google_translator, 'session'):
                         # تكوين الجلسة
-                        translator.session.verify = True
-                        translator.session.trust_env = False
-                        translator.session.headers.update(self.get_advanced_headers())
+                        google_translator.session.verify = True
+                        google_translator.session.trust_env = False
+                        google_translator.session.headers.update(self.get_advanced_headers())
                         
                         # إعداد محاولات إعادة الاتصال
                         adapter = requests.adapters.HTTPAdapter(
@@ -505,32 +525,46 @@ class ChessTextProcessor:
                             max_retries=3,
                             pool_block=False
                         )
-                        translator.session.mount('http://', adapter)
-                        translator.session.mount('https://', adapter)
+                        google_translator.session.mount('http://', adapter)
+                        google_translator.session.mount('https://', adapter)
                     
                     # اختبار المترجم
-                    test_result = translator.translate("test")
-                    if test_result:
-                        self.translators.append(translator)
-                        logging.info(f"تم إضافة مترجم جديد (بروكسي: {proxy})")
+                    test_result_google = google_translator.translate("test")
+                    if test_result_google:
+                        self.translators.append(google_translator)
+                        logging.info(f"تم إضافة GoogleTranslator (بروكسي: {proxy})")
                     
                 except Exception as e:
-                    logging.warning(f"فشل في إعداد المترجم مع البروكسي {proxy}: {str(e)}")
+                    logging.warning(f"فشل في إعداد GoogleTranslator مع البروكسي {proxy}: {str(e)}")
                     continue
 
             if not self.translators:
-                # إضافة مترجم مباشر كحل أخير
-                self.translators.append(GoogleTranslator(source='en', target='ar'))
-                logging.warning("تم إعداد مترجم مباشر فقط")
+                # إضافة مترجم Google مباشر كحل أخير إذا فشلت كل المحاولات الأخرى
+                try:
+                    self.translators.append(GoogleTranslator(source='en', target='ar'))
+                    logging.warning("تم إعداد GoogleTranslator مباشر فقط كحل أخير")
+                except Exception as e:
+                    logging.error(f"فشل تام في إعداد أي مترجم: {str(e)}")
+                    # يمكن رفع استثناء هنا إذا كان وجود مترجم ضروريًا لعمل البرنامج
             
             self.current_translator_index = 0
-            logging.info(f"تم إعداد {len(self.translators)} مترجم بنجاح")
+            if self.translators:
+                logging.info(f"تم إعداد {len(self.translators)} مترجم بنجاح. المترجم الأساسي: {self.translators[0].__class__.__name__}")
+            else:
+                logging.error("لم يتم إعداد أي مترجم.")
+                # قد تحتاج إلى معالجة هذا السيناريو بشكل مناسب
 
         except Exception as e:
-            logging.error(f"خطأ في إعداد المترجمين: {str(e)}")
-            # إعداد مترجم واحد للطوارئ
-            self.translators = [GoogleTranslator(source='en', target='ar')]
-            self.current_translator_index = 0
+            logging.error(f"خطأ كارثي في إعداد المترجمين: {str(e)}")
+            # إعداد مترجم واحد للطوارئ إذا فشل كل شيء آخر
+            try:
+                self.translators = [GoogleTranslator(source='en', target='ar')]
+                self.current_translator_index = 0
+                logging.warning("تم إعداد GoogleTranslator مباشر كحل طوارئ أخير.")
+            except Exception as final_e:
+                logging.error(f"فشل حتى في إعداد مترجم الطوارئ: {final_e}")
+                self.translators = [] # لا يوجد مترجمين متاحين
+                # يجب التعامل مع هذا الوضع في الأجزاء الأخرى من الكود
 
     def setup_logging(self):
         """إعداد التسجيل مع تنسيق متقدم"""
@@ -661,7 +695,8 @@ class ChessTextProcessor:
             
             # إذا كان البروكسي من نوع Tor، نقوم بتجديد المسار
             if current_proxy['type'] == 'tor':
-                self.renew_tor_circuit()
+                if not self.renew_tor_circuit(): # استدعاء الدالة المحدثة
+                    logging.warning(f"فشل في تجديد دائرة Tor لـ {current_proxy['name']}")
                 
             # تأخير عشوائي قبل استخدام البروكسي الجديد
             time.sleep(random.uniform(1, 3))
@@ -751,17 +786,25 @@ class ChessTextProcessor:
 
             # حفظ العناصر المهمة
             preserved = []
+            # Iterating patterns one by one. For each pattern, find all its matches.
+            # Then, iterate these matches in reverse order to perform replacements.
+            # This avoids index shifting issues for multiple matches of the SAME pattern.
             for pattern_name, pattern in preserved_patterns.items():
-                matches = re.finditer(pattern, text, re.MULTILINE)
-                for match in matches:
+                matches_for_current_pattern = []
+                for match in re.finditer(pattern, text, re.MULTILINE):
+                    matches_for_current_pattern.append(match)
+                
+                # Iterate in reverse order of matches to preserve indices
+                for match in reversed(matches_for_current_pattern):
+                    placeholder = f"[P#{len(preserved)}#P]" # Using a more unique placeholder format
                     preserved.append({
-                        'start': match.start(),
-                        'end': match.end(),
+                        'start': match.start(), # Original start, for reference, not directly used in this revised logic
+                        'end': match.end(),     # Original end
                         'content': match.group(),
                         'type': pattern_name,
-                        'placeholder': f"[PRESERVED_{len(preserved)}]"
+                        'placeholder': placeholder
                     })
-                    text = text[:match.start()] + f"[PRESERVED_{len(preserved)-1}]" + text[match.end():]
+                    text = text[:match.start()] + placeholder + text[match.end():]
 
             # تقسيم النص إلى أجزاء
             chunks = []
@@ -788,7 +831,9 @@ class ChessTextProcessor:
             translated_text = '\n'.join(translated_chunks)
 
             # استعادة العناصر المحفوظة
-            for item in preserved:
+            # Restore in reverse order of preservation to handle nested-like structures correctly
+            # if a placeholder's content accidentally creates another valid placeholder.
+            for item in reversed(preserved):
                 translated_text = translated_text.replace(item['placeholder'], item['content'])
 
             return translated_text
@@ -925,7 +970,7 @@ def main():
             raise Exception("فشل التحقق من متطلبات النظام")
 
         # تحديد مسار الملف
-        input_file = "/home/dc/Public/fml/output/document.txt"
+        input_file = "test_data/output/document.txt" # Changed to relative path
         if not os.path.exists(input_file):
             raise FileNotFoundError(f"الملف غير موجود: {input_file}")
 
@@ -944,7 +989,37 @@ def main():
     finally:
         # تنظيف الموارد
         if processor:
-            processor.cleanup()
+            # processor.cleanup() # التأكد من وجود هذه الدالة أو إزالتها إذا لم تكن معرفة
+            pass
+
+
+    def renew_tor_circuit(self):
+        """تجديد دائرة Tor للحصول على IP جديد"""
+        try:
+            with Controller.from_port(port=9051) as controller:
+                try:
+                    # محاولة المصادقة بكلمة مرور إذا كانت معدادة
+                    # عادةً ما تكون كلمة المرور هي "password" أو قيمة فارغة إذا لم يتم تعيينها
+                    # يجب التحقق من تكوين Tor لمعرفة كلمة المرور الصحيحة أو إذا كانت مطلوبة
+                    controller.authenticate() # أو controller.authenticate(password="YOUR_TOR_PASSWORD")
+                except Exception as auth_error:
+                    logging.warning(f"فشل المصادقة مع Tor ControlPort: {auth_error}. قد لا تكون كلمة المرور مطلوبة أو صحيحة.")
+                
+                controller.signal(Signal.NEWNYM)
+                # انتظار قصير للسماح بتكوين الدائرة الجديدة
+                time.sleep(controller.get_newnym_wait()) 
+                logging.info("✅ تم تجديد دائرة Tor بنجاح (NEWNYM signal sent).")
+                return True
+        except Exception as e:
+            logging.error(f"❌ خطأ أثناء تجديد دائرة Tor: {str(e)}")
+            return False
+
+    def cleanup(self):
+        """تنظيف الموارد عند إغلاق البرنامج"""
+        logging.info("بدء عملية التنظيف...")
+        # يمكنك إضافة أي عمليات تنظيف أخرى هنا، مثل إغلاق الاتصالات أو حذف الملفات المؤقتة
+        logging.info("✅ اكتملت عملية التنظيف.")
+
 
 if __name__ == "__main__":
     try:

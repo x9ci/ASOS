@@ -1,0 +1,43 @@
+2025-05-22 16:16:36 - INFO - بدء التسجيل في: logs/translation_log_20250522_161636.txt
+2025-05-22 16:16:36 - INFO - معرف المستخدم: x9up
+2025-05-22 16:16:36 - INFO - نظام التشغيل: Linux 6.8.0
+2025-05-22 16:16:36 - INFO - بدء تهيئة المعالج...
+2025-05-22 16:16:36 - INFO - ✅ تم العثور على مكتبة deep_translator
+2025-05-22 16:16:36 - INFO - ✅ تم العثور على مكتبة requests
+2025-05-22 16:16:36 - INFO - ✅ تم العثور على مكتبة fake_useragent
+2025-05-22 16:16:36 - INFO - ✅ تم العثور على مكتبة stem
+2025-05-22 16:16:36 - INFO - ✅ تم العثور على مكتبة socks
+2025-05-22 16:16:36 - INFO - ✅ تم العثور على مكتبة arabic_reshaper
+2025-05-22 16:16:36 - INFO - ✅ تم العثور على مكتبة bidi
+2025-05-22 16:16:36 - INFO - ✅ تم العثور على مكتبة psutil
+2025-05-22 16:16:36 - INFO - إصدار Tor: 0.4.8.10.
+2025-05-22 16:16:36 - INFO - ✅ تم التحقق من متطلبات النظام بنجاح
+2025-05-22 16:16:37 - INFO - ✅ تم التحقق من خدمة Tor بنجاح
+2025-05-22 16:16:37 - INFO - بروكسي socks5h://127.0.0.1:9050 يعمل بنجاح
+2025-05-22 16:16:37 - INFO - تم إضافة بروكسي: Tor Primary
+2025-05-22 16:16:37 - WARNING - فشل اختبار البروكسي socks5h://127.0.0.1:9150: SOCKSHTTPSConnectionPool(host='api.ipify.org', port=443): Max retries exceeded with url: /?format=json (Caused by NewConnectionError('<urllib3.contrib.socks.SOCKSHTTPSConnection object at 0x7f9a2339f040>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-05-22 16:16:37 - INFO - تم إعداد 2 بروكسي
+2025-05-22 16:16:39 - INFO - تم إضافة MyMemoryTranslator (بروكسي: {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'})
+2025-05-22 16:16:40 - INFO - تم إضافة GoogleTranslator (بروكسي: {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'})
+2025-05-22 16:16:40 - WARNING - فشل في إعداد MyMemoryTranslator مع البروكسي {'http': 'socks5h://127.0.0.1:9150', 'https': 'socks5h://127.0.0.1:9150'}: SOCKSHTTPConnectionPool(host='api.mymemory.translated.net', port=80): Max retries exceeded with url: /get?langpair=en-US%7Car-SA&q=test (Caused by NewConnectionError('<urllib3.contrib.socks.SOCKSConnection object at 0x7f9a22fbf190>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-05-22 16:16:40 - WARNING - فشل في إعداد GoogleTranslator مع البروكسي {'http': 'socks5h://127.0.0.1:9150', 'https': 'socks5h://127.0.0.1:9150'}: SOCKSHTTPSConnectionPool(host='translate.google.com', port=443): Max retries exceeded with url: /m?timeout=30&tl=ar&sl=en&q=test (Caused by NewConnectionError('<urllib3.contrib.socks.SOCKSHTTPSConnection object at 0x7f9a22fbe500>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2025-05-22 16:16:41 - INFO - تم إضافة MyMemoryTranslator (بروكسي: None)
+2025-05-22 16:16:41 - INFO - تم إضافة GoogleTranslator (بروكسي: None)
+2025-05-22 16:16:41 - INFO - تم إعداد 4 مترجم بنجاح. المترجم الأساسي: MyMemoryTranslator
+2025-05-22 16:16:41 - INFO - ✅ تم إكمال تهيئة المعالج بنجاح
+2025-05-22 16:16:41 - INFO - ✅ تم العثور على مكتبة deep_translator
+2025-05-22 16:16:41 - INFO - ✅ تم العثور على مكتبة requests
+2025-05-22 16:16:41 - INFO - ✅ تم العثور على مكتبة fake_useragent
+2025-05-22 16:16:41 - INFO - ✅ تم العثور على مكتبة stem
+2025-05-22 16:16:41 - INFO - ✅ تم العثور على مكتبة socks
+2025-05-22 16:16:41 - INFO - ✅ تم العثور على مكتبة arabic_reshaper
+2025-05-22 16:16:41 - INFO - ✅ تم العثور على مكتبة bidi
+2025-05-22 16:16:41 - INFO - ✅ تم العثور على مكتبة psutil
+2025-05-22 16:16:41 - INFO - إصدار Tor: 0.4.8.10.
+2025-05-22 16:16:41 - INFO - ✅ تم التحقق من متطلبات النظام بنجاح
+2025-05-22 16:16:41 - INFO - معالجة الصفحة 1 من 4
+2025-05-22 16:16:46 - INFO - معالجة الصفحة 2 من 4
+2025-05-22 16:16:53 - INFO - تم التبديل من Tor Primary إلى Direct Connection
+2025-05-22 16:16:53 - INFO - معالجة الصفحة 3 من 4
+2025-05-22 16:16:56 - INFO - معالجة الصفحة 4 من 4
+2025-05-22 16:17:01 - INFO - تم حفظ الترجمة في: test_data/output/translated_20250522_161641.txt

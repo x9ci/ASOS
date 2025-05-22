@@ -1,0 +1,23 @@
+2025-05-22 16:11:38 - INFO - بدء التسجيل في: logs/translation_log_20250522_161138.txt
+2025-05-22 16:11:38 - INFO - معرف المستخدم: x9up
+2025-05-22 16:11:38 - INFO - نظام التشغيل: Linux 6.8.0
+2025-05-22 16:11:38 - INFO - بدء تهيئة المعالج...
+2025-05-22 16:11:38 - INFO - ✅ تم العثور على مكتبة deep_translator
+2025-05-22 16:11:38 - INFO - ✅ تم العثور على مكتبة requests
+2025-05-22 16:11:38 - INFO - ✅ تم العثور على مكتبة fake_useragent
+2025-05-22 16:11:38 - INFO - ✅ تم العثور على مكتبة stem
+2025-05-22 16:11:38 - INFO - ✅ تم العثور على مكتبة socks
+2025-05-22 16:11:38 - INFO - ✅ تم العثور على مكتبة arabic_reshaper
+2025-05-22 16:11:38 - INFO - ✅ تم العثور على مكتبة bidi
+2025-05-22 16:11:38 - INFO - ✅ تم العثور على مكتبة psutil
+2025-05-22 16:11:38 - INFO - إصدار Tor: 0.4.8.10.
+2025-05-22 16:11:38 - INFO - ✅ تم التحقق من متطلبات النظام بنجاح
+2025-05-22 16:11:38 - ERROR - خطأ في التحقق من خدمة Tor: 0x01: General SOCKS server failure
+2025-05-22 16:11:38 - ERROR - ❌ فشل في تهيئة المعالج: فشل في تهيئة خدمة Tor
+2025-05-22 16:11:38 - ERROR - خطأ: فشل في تهيئة خدمة Tor
+Traceback (most recent call last):
+  File "/app/googletran.py", line 975, in main
+    processor = ChessTextProcessor()
+  File "/app/googletran.py", line 116, in __init__
+    raise Exception("فشل في تهيئة خدمة Tor")
+Exception: فشل في تهيئة خدمة Tor
