@@ -4,7 +4,7 @@ import logging
 import subprocess
 import platform
 import psutil
-from datetime import datetime
+from datetime import datetime, timezone # Modified import
 import socket
 import requests
 import socks  # استخدام socks بدلاً من PySocks
@@ -17,7 +17,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display  # استخدام bidi بدلاً من python-bidi
 import re
 import json
-from deep_translator import GoogleTranslator, MyMemoryTranslator # Added MyMemoryTranslator
+from deep_translator import GoogleTranslator # Removed MyMemoryTranslator
 
 # تعريف المتغيرات العامة
 CURRENT_USER = os.getenv('USER', 'unknown')
@@ -540,24 +540,8 @@ class ChessTextProcessor:
                         logging.warning(f"GoogleTranslator test failed (Proxy: {proxy})")
                 except Exception as e:
                     logging.warning(f"Failed to set up GoogleTranslator (Proxy: {proxy}): {str(e)}")
-
-                # Attempt MyMemoryTranslator setup
-                try:
-                    my_memory_translator = MyMemoryTranslator(
-                        source='en',
-                        target='ar',
-                        proxies=proxy,
-                        timeout=30
-                    )
-                    # Test MyMemoryTranslator
-                    test_mm_result = my_memory_translator.translate("test")
-                    if test_mm_result:
-                        self.translators.append(my_memory_translator)
-                        logging.info(f"Successfully added MyMemoryTranslator (Proxy: {proxy})")
-                    else:
-                        logging.warning(f"MyMemoryTranslator test failed (Proxy: {proxy})")
-                except Exception as e:
-                    logging.warning(f"Failed to set up MyMemoryTranslator (Proxy: {proxy}): {str(e)}")
+            
+            # MyMemoryTranslator is no longer initialized here; it will be called directly via API.
 
             if not self.translators:
                 # Fallback to direct GoogleTranslator if all proxy setups fail
@@ -566,14 +550,7 @@ class ChessTextProcessor:
                     logging.warning("Added direct GoogleTranslator as a fallback since no proxy translators were set up.")
                 except Exception as e:
                     logging.error(f"Failed to set up even a direct GoogleTranslator as fallback: {e}")
-                # Optionally, try direct MyMemoryTranslator as an ultimate fallback
-                try:
-                    direct_mm_translator = MyMemoryTranslator(source='en', target='ar', timeout=30)
-                    if direct_mm_translator.translate("test"):
-                         self.translators.append(direct_mm_translator)
-                         logging.warning("Added direct MyMemoryTranslator as an ultimate fallback.")
-                except Exception as e:
-                    logging.error(f"Failed to set up direct MyMemoryTranslator as fallback: {e}")
+                # No MyMemoryTranslator fallback here as it's not part of self.translators
             
             self.current_translator_index = 0
             logging.info(f"تم إعداد {len(self.translators)} مترجم بنجاح")
@@ -760,54 +737,72 @@ class ChessTextProcessor:
                 result = translator.translate(text.strip())
                 
                 if result and isinstance(result, str):
-                    is_primary_google = PREFERRED_TRANSLATOR_SERVICE == "google" and isinstance(translator, GoogleTranslator)
-                    is_primary_mymemory = PREFERRED_TRANSLATOR_SERVICE == "mymemory" and isinstance(translator, MyMemoryTranslator)
-                    is_primary_translator = is_primary_google or is_primary_mymemory
+                result = None
+                current_translator_name = "Unknown"
 
-                    FallbackTranslatorType = None
-                    if PREFERRED_TRANSLATOR_SERVICE == "google":
-                        FallbackTranslatorType = MyMemoryTranslator
-                    elif PREFERRED_TRANSLATOR_SERVICE == "mymemory":
-                        FallbackTranslatorType = GoogleTranslator
-                    
+                if PREFERRED_TRANSLATOR_SERVICE == "mymemory":
+                    current_translator_name = "MyMemoryAPI"
+                    logging.info(f"Attempting primary translation with {current_translator_name} for: {text.strip()}")
+                    result = self._translate_with_mymemory_api(text.strip())
+                    if result is None: # MyMemory API failed or returned no valid translation
+                        logging.warning(f"{current_translator_name} failed or returned None. Attempting GoogleTranslator fallback.")
+                        # Try GoogleTranslator as fallback
+                        if self.translators: # Check if any GoogleTranslator instances are available
+                            translator = self.translators[self.current_translator_index] # Use the current GoogleTranslator
+                            current_translator_name = translator.__class__.__name__
+                            logging.info(f"Attempting fallback translation with {current_translator_name} for: {text.strip()}")
+                            # Update session for GoogleTranslator if it's used
+                            if hasattr(translator, 'session'):
+                                current_proxy_config = self.proxies[self.current_proxy_index]
+                                if current_proxy_config['url']:
+                                    translator.session.proxies = {'http': current_proxy_config['url'], 'https': current_proxy_config['url']}
+                                translator.session.headers.update(self.get_advanced_headers())
+                                translator.session.headers['X-Attempt'] = str(attempt) + "-fallback"
+                            result = translator.translate(text.strip())
+                        else:
+                            logging.warning("No GoogleTranslator instances available for fallback.")
+                else: # Google is preferred (or default)
+                    translator = self.translators[self.current_translator_index]
+                    current_translator_name = translator.__class__.__name__
+                    # Update session for GoogleTranslator
+                    if hasattr(translator, 'session'):
+                        current_proxy_config = self.proxies[self.current_proxy_index]
+                        if current_proxy_config['url']:
+                             translator.session.proxies = {'http': current_proxy_config['url'], 'https': current_proxy_config['url']}
+                        translator.session.headers.update(self.get_advanced_headers())
+                        translator.session.headers['X-Attempt'] = str(attempt)
+                    logging.info(f"Attempting primary translation with {current_translator_name} for: {text.strip()}")
+                    result = translator.translate(text.strip())
+
+                # Common handling for result from either primary or fallback
+                if result and isinstance(result, str):
                     is_problematic_result = len(result) < len(text.strip()) * 0.4
+                    
+                    # If the primary was Google and result is problematic, try MyMemory as fallback
+                    if PREFERRED_TRANSLATOR_SERVICE == "google" and isinstance(translator, GoogleTranslator) and is_problematic_result:
+                        logging.warning(f"GoogleTranslate result '({result})' is very short. Attempting MyMemoryAPI fallback.")
+                        original_primary_result = result
+                        fallback_result = self._translate_with_mymemory_api(text.strip())
+                        if fallback_result and isinstance(fallback_result, str) and not (len(fallback_result) < len(text.strip()) * 0.4):
+                            logging.info(f"Successfully translated with MyMemoryAPI as fallback. New result: {fallback_result}")
+                            self.consecutive_failures = 0
+                            return fallback_result
+                        else:
+                            logging.warning(f"MyMemoryAPI fallback result was also empty, invalid, or too short: '{fallback_result}'. Returning original short Google result.")
+                            self.consecutive_failures = 0
+                            return original_primary_result # Return the original short Google result
+                    
+                    # If primary was MyMemory and it was problematic (already handled by first block, this is for non-problematic or if Google was fallback)
+                    # Or if primary was Google and not problematic
+                    if not is_problematic_result or (PREFERRED_TRANSLATOR_SERVICE == "mymemory" and not isinstance(translator, GoogleTranslator)): # Check if it's not a GoogleTranslator instance if MyMemory was primary
+                        self.consecutive_failures = 0
+                        return result
+                    elif PREFERRED_TRANSLATOR_SERVICE == "mymemory" and isinstance(translator, GoogleTranslator) and is_problematic_result: # MyMemory was primary, Google fallback was problematic
+                         logging.warning(f"GoogleTranslate fallback (after MyMemory primary) result '({result})' is very short. Returning original text.")
+                         # Fall through to return original_text if all attempts, including fallback, are problematic or fail
+                    elif PREFERRED_TRANSLATOR_SERVICE == "google" and not isinstance(translator, GoogleTranslator) and is_problematic_result: # Should not happen based on current logic, but for safety.
+                         logging.warning(f"Non-Google translator result '({result})' is very short. Returning original text.")
 
-                    if is_primary_translator and is_problematic_result and FallbackTranslatorType:
-                        primary_translator_name = translator.__class__.__name__
-                        fallback_translator_name = FallbackTranslatorType.__name__
-                        logging.warning(f"{primary_translator_name} result '({result})' is very short (original length {len(text.strip())}). Attempting fallback with {fallback_translator_name}.")
-                        
-                        found_fallback_translator = False
-                        original_primary_result = result # Keep the original short result
-
-                        for fallback_candidate in self.translators:
-                            if isinstance(fallback_candidate, FallbackTranslatorType):
-                                try:
-                                    logging.info(f"Attempting fallback translation with {fallback_translator_name} for: {text.strip()}")
-                                    fallback_result = fallback_candidate.translate(text.strip())
-                                    
-                                    # Check if fallback result is valid and not also problematic
-                                    if fallback_result and isinstance(fallback_result, str) and not (len(fallback_result) < len(text.strip()) * 0.4):
-                                        logging.info(f"Successfully translated with {fallback_translator_name} as fallback. New result: {fallback_result}")
-                                        self.consecutive_failures = 0 # Reset on successful fallback
-                                        return fallback_result # Return fallback result
-                                    else:
-                                        logging.warning(f"{fallback_translator_name} fallback result was also empty, invalid, or too short: '{fallback_result}'")
-                                except Exception as fb_e:
-                                    logging.warning(f"{fallback_translator_name} fallback attempt failed: {fb_e}")
-                                found_fallback_translator = True
-                                break # Tried one fallback translator, that's enough
-                        
-                        if not found_fallback_translator:
-                            logging.info(f"No {fallback_translator_name} instances found for fallback.")
-                        
-                        # If fallback was not attempted, failed, or its result was also problematic, return original primary result.
-                        self.consecutive_failures = 0 # Still a success from primary translator, albeit short
-                        return original_primary_result
-
-                    # If not the primary preferred translator, or if the result is not problematic, or no fallback type defined:
-                    self.consecutive_failures = 0  # Reset for any successful translation
-                    return result
 
             except Exception as e:
                 last_error = str(e)
@@ -826,9 +821,79 @@ class ChessTextProcessor:
                 time.sleep((attempt + 1) * 0.5) # Reduced delay
                 continue
 
-        # إذا فشلت كل المحاولات، نسجل الخطأ ونعيد النص الأصلي
-        logging.error(f"فشلت جميع محاولات الترجمة. آخر خطأ: {last_error}")
+        # إذا فشلت كل المحاولات، نسجل الخطأ ونعيد النص الأصلي (this will be reached if result is None or not a string after all attempts)
+        logging.error(f"All translation attempts failed for '{text.strip()}'. Last error: {last_error}")
         return original_text
+
+    def _translate_with_mymemory_api(self, text: str) -> str | None:
+        """Translates text using MyMemory API directly via requests, with retries."""
+        if not text:
+            return None
+        
+        max_mymemory_retries = 2  # Max 2 attempts for MyMemory API call
+        last_exception = None
+        
+        for attempt in range(max_mymemory_retries):
+            try:
+                url = "https://api.mymemory.translated.net/get"
+                params = {
+                    "q": text,
+                    "langpair": "en|ar"  # English to Arabic
+                }
+                request_headers = self.headers if hasattr(self, 'headers') and self.headers else {'User-Agent': 'PythonTranslateScript/1.0'}
+                
+                current_proxy_config = self.proxies[self.current_proxy_index]
+                proxies_for_request = None
+                proxy_name_for_log = "direct connection"
+                if current_proxy_config and current_proxy_config['url']:
+                    proxies_for_request = {'http': current_proxy_config['url'], 'https': current_proxy_config['url']}
+                    proxy_name_for_log = current_proxy_config['name']
+                
+                logging.info(f"MyMemory API attempt {attempt + 1}/{max_mymemory_retries} using proxy: {proxy_name_for_log} for text: '{text[:50]}...'")
+
+                response = requests.get(url, params=params, headers=request_headers, timeout=15, proxies=proxies_for_request)
+                response.raise_for_status() 
+                
+                json_response = response.json()
+                translated_text = json_response.get("responseData", {}).get("translatedText")
+                
+                if json_response.get("responseStatus") == 200 and translated_text:
+                    if "PLEASE REPORT ANY TRANSLATION ERROR" in translated_text.upper():
+                        logging.warning("MyMemory response contained a disclaimer.")
+                        translated_text = re.sub(r"PLEASE REPORT ANY TRANSLATION ERROR.*", "", translated_text, flags=re.IGNORECASE).strip()
+                    if translated_text: # Ensure not empty after cleaning
+                        return translated_text
+                    else: # Empty after cleaning disclaimer
+                        logging.warning(f"MyMemory translation was empty after cleaning disclaimer for text: '{text[:50]}...'. Attempt {attempt + 1}/{max_mymemory_retries}")
+                        # This case will effectively be a failed attempt, leading to retry or returning None
+                else:
+                    error_details = json_response.get("responseDetails", "No details provided.")
+                    logging.warning(f"MyMemory API call successful but translation missing or status not OK. Details: {error_details}. Attempt {attempt + 1}/{max_mymemory_retries}")
+                
+                # If we reach here, it means the API call was 'successful' but data was not good (e.g. empty after clean, or status not 200)
+                # We might not want to immediately retry if the API itself says there's an issue with the query,
+                # but for now, we'll let the loop retry for any non-exception case that doesn't return text.
+                # A specific error from MyMemory like "invalid langpair" shouldn't be retried.
+                # However, the current structure will retry.
+                last_exception = Exception(f"MyMemory API status not 200 or empty text. Details: {error_details}")
+
+            except requests.exceptions.Timeout as e_timeout:
+                last_exception = e_timeout
+                logging.warning(f"MyMemory API attempt {attempt + 1}/{max_mymemory_retries} timed out. Retrying after delay if attempts left...")
+            except requests.exceptions.RequestException as e_req:
+                last_exception = e_req
+                logging.warning(f"MyMemory API attempt {attempt + 1}/{max_mymemory_retries} failed with RequestException: {e_req}. Retrying after delay if attempts left...")
+            except Exception as e_gen: # Catch other potential errors like JSONDecodeError
+                last_exception = e_gen
+                logging.error(f"Error during MyMemory translation attempt {attempt + 1}/{max_mymemory_retries}: {e_gen}")
+                # For unexpected errors, probably best not to retry blindly.
+                # However, to match the conceptual change, we will retry after a delay.
+            
+            if attempt < max_mymemory_retries - 1:
+                time.sleep(1) # Short delay before retrying MyMemory
+            
+        logging.error(f"All {max_mymemory_retries} MyMemory API attempts failed for text: '{text[:50]}...'. Last exception: {last_exception}")
+        return None
 
     def process_text_block(self, text, chunk_size=CHUNK_SIZE):
         """معالجة النص مع الحفاظ على العناصر المهمة"""
@@ -1037,10 +1102,8 @@ class ChessTextProcessor:
     def create_metadata(self):
         """إنشاء المعلومات الوصفية للملف"""
         # Address DeprecationWarning for datetime.utcnow()
-        # Import timezone if not already available, or use datetime.timezone.utc
-        # Assuming 'import datetime' or 'from datetime import datetime, timezone'
-        # Based on current imports 'from datetime import datetime', datetime.timezone.utc should work.
-        current_time = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        # Use the imported timezone object directly
+        current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         system_info = platform.uname()
         
         metadata = (
