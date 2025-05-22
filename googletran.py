@@ -121,7 +121,7 @@ class ChessTextProcessor:
             
             # إعداد User-Agent والهيدرز
             try:
-                self.user_agents = UserAgent(verify_ssl=False)
+                self.user_agents = UserAgent() # Removed verify_ssl=False
                 self.headers = self.get_advanced_headers()
             except Exception as e:
                 logging.warning(f"فشل في إعداد User-Agent المتقدم: {e}")
@@ -175,95 +175,93 @@ class ChessTextProcessor:
     
     
     def verify_tor_service(self):
-        """التحقق من خدمة Tor وإعادة تشغيلها إذا لزم الأمر"""
-        try:
-            # التحقق من وجود المجلدات الضرورية
-            required_dirs = ['/var/lib/tor', '/etc/tor', '/var/log/tor']
-            for dir_path in required_dirs:
-                if not os.path.exists(dir_path):
-                    subprocess.run(['sudo', 'mkdir', '-p', dir_path], check=True)
-                    subprocess.run(['sudo', 'chown', 'debian-tor:debian-tor', dir_path], check=True)
-                    
-            # التحقق من حالة الخدمة
-            status = subprocess.run(['systemctl', 'is-active', 'tor'], 
-                                  capture_output=True, 
-                                  text=True).stdout.strip()
-            
-            if status != 'active':
-                logging.info("خدمة Tor غير نشطة. جاري إعادة التشغيل...")
-                subprocess.run(['sudo', 'systemctl', 'restart', 'tor'], check=True)
-                time.sleep(5)
-            
-            # التحقق من المنافذ
-            for port_to_check in [9050]: # Only check 9050 for SOCKS proxy initially
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2) # Short timeout for port check
-                result = sock.connect_ex(('127.0.0.1', port_to_check))
-                sock.close()
-                if result != 0:
-                    logging.warning(f"المنفذ {port_to_check} (SOCKS) غير متاح. قد لا تعمل الترجمة عبر Tor.")
-                    # Not returning False here, as direct connection might be an option.
-            
-            # Check for control port 9051 only if Tor connection is expected to be actively managed
-            # For now, let's make this check less strict to allow testing of translation
-            port_9051_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            port_9051_sock.settimeout(1) # Very short timeout
-            if port_9051_sock.connect_ex(('127.0.0.1', 9051)) != 0:
-                logging.warning("المنفذ 9051 (Tor ControlPort) غير متاح. تجديد مسار Tor لن يعمل.")
-            port_9051_sock.close()
+        """Verifies the availability of a Tor SOCKS proxy and ControlPort without managing the service."""
+        logging.info("التحقق من توفر بروكسي Tor...")
+        tor_socks_port_available = False
+        tor_control_port_available = False
 
-            # اختبار الاتصال عبر Tor
+        # 1. Check SOCKS Port 9050
+        try:
+            sock_9050 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock_9050.settimeout(2)  # Short timeout for port check
+            if sock_9050.connect_ex(('127.0.0.1', 9050)) == 0:
+                tor_socks_port_available = True
+                logging.info("✅ منفذ Tor SOCKS (9050) مفتوح.")
+            else:
+                logging.warning("⚠️ منفذ Tor SOCKS (9050) مغلق أو لا يمكن الوصول إليه.")
+            sock_9050.close()
+        except Exception as e:
+            logging.warning(f"خطأ أثناء التحقق من منفذ Tor SOCKS (9050): {e}")
+
+        # 2. Check Control Port 9051
+        try:
+            sock_9051 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock_9051.settimeout(1)  # Shorter timeout for control port
+            if sock_9051.connect_ex(('127.0.0.1', 9051)) == 0:
+                tor_control_port_available = True
+                logging.info("✅ منفذ Tor ControlPort (9051) مفتوح.")
+            else:
+                logging.warning("⚠️ منفذ Tor ControlPort (9051) مغلق أو لا يمكن الوصول إليه. لن تعمل ميزات مثل تجديد الدائرة.")
+            sock_9051.close()
+        except Exception as e:
+            logging.warning(f"خطأ أثناء التحقق من منفذ Tor ControlPort (9051): {e}")
+
+        # 3. Perform SOCKS proxy connection test if port 9050 is available
+        if tor_socks_port_available:
+            logging.info("اختبار الاتصال عبر بروكسي Tor SOCKS (9050)...")
             session = requests.Session()
             session.proxies = {
                 'http': 'socks5h://127.0.0.1:9050',
                 'https': 'socks5h://127.0.0.1:9050'
             }
+            try:
+                response = session.get('https://check.torproject.org/', timeout=10)
+                if 'Congratulations' in response.text:
+                    logging.info("✅ نجح اختبار الاتصال عبر بروكسي Tor. يبدو أن Tor يعمل بشكل صحيح.")
+                else:
+                    logging.warning("⚠️ فشل اختبار الاتصال عبر بروكسي Tor باستخدام check.torproject.org. قد لا يتم توجيه الطلبات عبر Tor.")
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"⚠️ فشل اختبار الاتصال عبر بروكسي Tor (RequestException): {e}. قد لا يتم توجيه الطلبات عبر Tor.")
+            finally:
+                session.close()
+        else:
+            logging.warning("⚠️ لن يتم إجراء اختبار الاتصال عبر بروكسي Tor لأن المنفذ 9050 غير متاح.")
+
+        # This method now primarily serves as a check and advisory, not a strict gate.
+        # It returns True to allow the application to proceed and try other proxies or direct connection.
+        if not tor_socks_port_available:
+             logging.warning("الاعتماد على بروكسيات أخرى أو الاتصال المباشر بسبب عدم توفر بروكسي Tor الأساسي.")
+        
+        return True # Always return True to allow script to continue
+
+    # def check_tor_status(self): # This method relied on systemctl and is no longer needed with the new verify_tor_service
+    #     """التحقق من حالة Tor"""
+    #     try:
+    #         # التحقق من العملية
+    #         result = subprocess.run(
+    #             ['systemctl', 'status', 'tor'],
+    #             capture_output=True,
+    #             text=True
+    #         )
             
-            response = session.get('https://check.torproject.org/', timeout=10)
-            if 'Congratulations' in response.text:
-                logging.info("✅ تم التحقق من خدمة Tor بنجاح والاتصال يتم عبر Tor.")
-                return True
-            else:
-                # If check.torproject.org doesn't confirm, it might be a network issue or Tor misconfiguration.
-                # Allow proceeding but log clearly.
-                logging.warning("⚠️ لم يتمكن من تأكيد أن الاتصال يتم عبر شبكة Tor باستخدام check.torproject.org.")
-                # For testing purposes, we will allow the script to continue.
-                # In a production scenario, stricter handling might be needed.
-                return True # Modified for testing
+    #         if 'active (running)' not in result.stdout:
+    #             logging.warning("خدمة Tor غير نشطة")
+    #             return False
                 
-        except Exception as e:
-            logging.error(f"خطأ في التحقق من خدمة Tor (ربما فشل الاتصال بـ check.torproject.org): {str(e)}")
-            logging.warning("⚠️ سيستمر البرنامج مع افتراض أن Tor قد لا يكون مكوّنًا بشكل صحيح أو أن الشبكة لا تسمح بالاتصال.")
-            return True # Modified for testing
-    
-    def check_tor_status(self):
-        """التحقق من حالة Tor"""
-        try:
-            # التحقق من العملية
-            result = subprocess.run(
-                ['systemctl', 'status', 'tor'],
-                capture_output=True,
-                text=True
-            )
+    #         # التحقق من المنافذ
+    #         for port in [9050, 9051]:
+    #             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #             if sock.connect_ex(('127.0.0.1', port)) != 0:
+    #                 logging.error(f"المنفذ {port} غير متاح")
+    #                 sock.close()
+    #                 return False
+    #             sock.close()
+                
+    #         return True
             
-            if 'active (running)' not in result.stdout:
-                logging.warning("خدمة Tor غير نشطة")
-                return False
-                
-            # التحقق من المنافذ
-            for port in [9050, 9051]:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                if sock.connect_ex(('127.0.0.1', port)) != 0:
-                    logging.error(f"المنفذ {port} غير متاح")
-                    sock.close()
-                    return False
-                sock.close()
-                
-            return True
-            
-        except Exception as e:
-            logging.error(f"خطأ في التحقق من حالة Tor: {str(e)}")
-            return False
+    #     except Exception as e:
+    #         logging.error(f"خطأ في التحقق من حالة Tor: {str(e)}")
+    #         return False
 
     def get_advanced_headers(self):
         """إنشاء هيدرز متقدمة"""
@@ -698,7 +696,7 @@ class ChessTextProcessor:
             self.current_proxy_index = self.proxies.index(previous_proxy)
             return False
     
-    def translate_with_retry(self, text, max_retries=2, is_target_chunk=False): # Reduced max_retries, added is_target_chunk
+    def translate_with_retry(self, text, max_retries=2): # Reduced max_retries
         """ترجمة النص مع معالجة متقدمة للأخطاء وتغيير المترجمين"""
         if not text or not text.strip():
             return text
@@ -728,11 +726,7 @@ class ChessTextProcessor:
                     translator.session.headers['X-Attempt'] = str(attempt)
 
                 # محاولة الترجمة
-                if is_target_chunk:
-                    logging.info(f'TARGET CHUNK SENDING: {text.strip()}')
                 result = translator.translate(text.strip())
-                if is_target_chunk:
-                    logging.info(f'TARGET CHUNK RECEIVED: {result}')
                 
                 if result and isinstance(result, str):
                     self.consecutive_failures = 0  # إعادة تعيين عداد الفشل
@@ -741,8 +735,6 @@ class ChessTextProcessor:
             except Exception as e:
                 last_error = str(e)
                 logging.warning(f"فشل المحاولة {attempt + 1}: {last_error}")
-                if is_target_chunk:
-                    logging.info(f'TARGET CHUNK ATTEMPT {attempt + 1} FAILED: {last_error}')
                 
                 # زيادة عداد الفشل
                 self.consecutive_failures += 1
@@ -759,8 +751,6 @@ class ChessTextProcessor:
 
         # إذا فشلت كل المحاولات، نسجل الخطأ ونعيد النص الأصلي
         logging.error(f"فشلت جميع محاولات الترجمة. آخر خطأ: {last_error}")
-        if is_target_chunk:
-            logging.info(f'TARGET CHUNK FAILED - RETURNING ORIGINAL: {original_text}')
         return original_text
 
     def process_text_block(self, text, chunk_size=CHUNK_SIZE):
@@ -840,15 +830,8 @@ class ChessTextProcessor:
 
             # ترجمة كل جزء
             translated_chunks = []
-            # Determine if any chunk from this block will be a target chunk for logging
-            # This check is simplified because process_file is already sending only the target paragraph.
-            # Thus, any chunk from this specific paragraph is considered a target.
-            log_this_page_chunks = "female vag" in text # Check if the original full text contains the phrase
-
             for chunk in chunks:
-                # Pass the flag to translate_with_retry
-                # If the original text block (page) contained the target, all its chunks are logged.
-                translated_chunk = self.translate_with_retry(chunk, is_target_chunk=log_this_page_chunks)
+                translated_chunk = self.translate_with_retry(chunk) # Removed is_target_chunk flag
                 translated_chunks.append(translated_chunk)
                 
                 # تأخير ذكي بين الأجزاء
@@ -890,47 +873,74 @@ class ChessTextProcessor:
             self.headers = self.get_advanced_headers()
 
     def process_file(self, input_filename):
-        """معالجة الملف مع تتبع كامل وإدارة الأخطاء - *** معدل للاختبار المحدد ***"""
+        """معالجة الملف مع تتبع كامل وإدارة الأخطاء"""
         try:
-            problematic_paragraph = """\
-…Wait
-I guess normally, I should be thinking along the lines of
-“Shit, was I just born? Am I a baby now?”
-But strangely, the only thought that seemed to pop up in
-my mind was “So the bright light at the end of the tunnel is the
-light coming through into the female vag…”
-Haha… lets not think about it anymore.
-"""
-            logging.info(f"بدء معالجة الفقرة المحددة للاختبار...")
-            print(f"بدء معالجة الفقرة المحددة للاختبار...")
+            # التحقق من وجود الملف
+            if not os.path.exists(input_filename):
+                raise FileNotFoundError(f"الملف غير موجود: {input_filename}")
 
-            # ترجمة الفقرة المحددة
-            translated_paragraph = self.process_text_block(problematic_paragraph)
-            
-            output_filename = "test_specific_translation.txt"
-            
-            # كتابة الفقرة المترجمة إلى ملف
+            # قراءة الملف
+            with open(input_filename, 'r', encoding='utf-8') as file:
+                content = file.read()
+
+            # إنشاء المعلومات الوصفية
+            metadata = self.create_metadata()
+
+            # تقسيم المحتوى إلى صفحات
+            pages = re.split(r'(=== الصفحة \d+ ===)', content)
+            total_pages = len([p for p in pages if p.strip()])
+            translated_pages = []
+            current_page = 1
+
+            # إنشاء ملف الترجمة
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_filename = os.path.join(
+                os.path.dirname(input_filename),
+                f"translated_{timestamp}.txt"
+            )
+
+            # كتابة المعلومات الوصفية
             with open(output_filename, 'w', encoding='utf-8') as outfile:
-                outfile.write("Original Paragraph (for reference):\n")
-                outfile.write("===================================\n")
-                outfile.write(problematic_paragraph + "\n\n")
-                outfile.write("Translated Paragraph:\n")
-                outfile.write("===================================\n")
-                outfile.write(translated_paragraph + "\n")
+                outfile.write(metadata)
+                outfile.write("="*50 + "\n\n")
 
-            logging.info(f"تم حفظ ترجمة الفقرة المحددة في: {output_filename}")
-            print(f"✅ تم حفظ ترجمة الفقرة المحددة في: {output_filename}")
+                # معالجة كل صفحة
+                for i, page in enumerate(pages):
+                    if page.strip():
+                        try:
+                            logging.info(f"معالجة الصفحة {current_page} من {total_pages}")
+                            print(f"جاري معالجة الصفحة {current_page} من {total_pages}")
+
+                            # ترجمة الصفحة
+                            translated_page = self.process_text_block(page)
+                            translated_pages.append(translated_page)
+                            
+                            # كتابة الصفحة مباشرة إلى الملف
+                            outfile.write(translated_page + "\n")
+                            outfile.flush()  # ضمان حفظ البيانات
+                            
+                            current_page += 1
+                            
+                            # تدوير البروكسي كل عدة صفحات
+                            if current_page % 3 == 0:
+                                self.rotate_proxy()
+                                
+                        except Exception as e:
+                            logging.error(f"خطأ في معالجة الصفحة {current_page}: {str(e)}")
+                            # في حالة الخطأ، نحفظ النص الأصلي
+                            outfile.write(page + "\n")
+                            outfile.flush()
+
+                # كتابة معلومات المعالجة النهائية
+                completion_info = self.create_completion_info(current_page - 1)
+                outfile.write("\n" + completion_info)
+
+            logging.info(f"تم حفظ الترجمة في: {output_filename}")
+            print(f"✅ تم حفظ الترجمة في: {output_filename}")
             return output_filename
 
         except Exception as e:
-            logging.error(f"خطأ في معالجة الفقرة المحددة: {str(e)}", exc_info=True)
-            # في حالة الخطأ، نحاول كتابة ما يمكننا
-            try:
-                with open("test_specific_translation_error.txt", 'w', encoding='utf-8') as errfile:
-                    errfile.write(f"Error during processing specific paragraph:\n{str(e)}\n")
-                    errfile.write(f"Original paragraph was:\n{problematic_paragraph}\n")
-            except:
-                pass # If error file writing fails, nothing more to do here
+            logging.error(f"خطأ في معالجة الملف: {str(e)}")
             raise
 
     def create_metadata(self):
