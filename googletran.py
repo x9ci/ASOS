@@ -17,7 +17,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display  # استخدام bidi بدلاً من python-bidi
 import re
 import json
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator # Added MyMemoryTranslator
 
 # تعريف المتغيرات العامة
 CURRENT_USER = os.getenv('USER', 'unknown')
@@ -29,6 +29,7 @@ DELAY_MIN = 2
 DELAY_MAX = 5
 CHUNK_SIZE = 1000
 MAX_CONSECUTIVE_FAILURES = 3
+PREFERRED_TRANSLATOR_SERVICE = "google"  # Options: "google" or "mymemory"
 
 # إعداد Tor
 def setup_tor():
@@ -505,19 +506,20 @@ class ChessTextProcessor:
 
             # إنشاء مترجم لكل تكوين بروكسي
             for proxy in proxy_configs:
+                # Attempt GoogleTranslator setup
                 try:
-                    translator = GoogleTranslator(
+                    google_translator = GoogleTranslator(
                         source='en',
                         target='ar',
                         proxies=proxy,
                         timeout=30
                     )
                     
-                    if hasattr(translator, 'session'):
+                    if hasattr(google_translator, 'session'):
                         # تكوين الجلسة
-                        translator.session.verify = True
-                        translator.session.trust_env = False
-                        translator.session.headers.update(self.get_advanced_headers())
+                        google_translator.session.verify = True
+                        google_translator.session.trust_env = False
+                        google_translator.session.headers.update(self.get_advanced_headers())
                         
                         # إعداد محاولات إعادة الاتصال
                         adapter = requests.adapters.HTTPAdapter(
@@ -526,23 +528,52 @@ class ChessTextProcessor:
                             max_retries=3,
                             pool_block=False
                         )
-                        translator.session.mount('http://', adapter)
-                        translator.session.mount('https://', adapter)
+                        google_translator.session.mount('http://', adapter)
+                        google_translator.session.mount('https://', adapter)
                     
                     # اختبار المترجم
-                    test_result = translator.translate("test")
-                    if test_result:
-                        self.translators.append(translator)
-                        logging.info(f"تم إضافة مترجم جديد (بروكسي: {proxy})")
-                    
+                    test_g_result = google_translator.translate("test")
+                    if test_g_result:
+                        self.translators.append(google_translator)
+                        logging.info(f"Successfully added GoogleTranslator (Proxy: {proxy})")
+                    else:
+                        logging.warning(f"GoogleTranslator test failed (Proxy: {proxy})")
                 except Exception as e:
-                    logging.warning(f"فشل في إعداد المترجم مع البروكسي {proxy}: {str(e)}")
-                    continue
+                    logging.warning(f"Failed to set up GoogleTranslator (Proxy: {proxy}): {str(e)}")
+
+                # Attempt MyMemoryTranslator setup
+                try:
+                    my_memory_translator = MyMemoryTranslator(
+                        source='en',
+                        target='ar',
+                        proxies=proxy,
+                        timeout=30
+                    )
+                    # Test MyMemoryTranslator
+                    test_mm_result = my_memory_translator.translate("test")
+                    if test_mm_result:
+                        self.translators.append(my_memory_translator)
+                        logging.info(f"Successfully added MyMemoryTranslator (Proxy: {proxy})")
+                    else:
+                        logging.warning(f"MyMemoryTranslator test failed (Proxy: {proxy})")
+                except Exception as e:
+                    logging.warning(f"Failed to set up MyMemoryTranslator (Proxy: {proxy}): {str(e)}")
 
             if not self.translators:
-                # إضافة مترجم مباشر كحل أخير
-                self.translators.append(GoogleTranslator(source='en', target='ar'))
-                logging.warning("تم إعداد مترجم مباشر فقط")
+                # Fallback to direct GoogleTranslator if all proxy setups fail
+                try:
+                    self.translators.append(GoogleTranslator(source='en', target='ar'))
+                    logging.warning("Added direct GoogleTranslator as a fallback since no proxy translators were set up.")
+                except Exception as e:
+                    logging.error(f"Failed to set up even a direct GoogleTranslator as fallback: {e}")
+                # Optionally, try direct MyMemoryTranslator as an ultimate fallback
+                try:
+                    direct_mm_translator = MyMemoryTranslator(source='en', target='ar', timeout=30)
+                    if direct_mm_translator.translate("test"):
+                         self.translators.append(direct_mm_translator)
+                         logging.warning("Added direct MyMemoryTranslator as an ultimate fallback.")
+                except Exception as e:
+                    logging.error(f"Failed to set up direct MyMemoryTranslator as fallback: {e}")
             
             self.current_translator_index = 0
             logging.info(f"تم إعداد {len(self.translators)} مترجم بنجاح")
@@ -729,7 +760,53 @@ class ChessTextProcessor:
                 result = translator.translate(text.strip())
                 
                 if result and isinstance(result, str):
-                    self.consecutive_failures = 0  # إعادة تعيين عداد الفشل
+                    is_primary_google = PREFERRED_TRANSLATOR_SERVICE == "google" and isinstance(translator, GoogleTranslator)
+                    is_primary_mymemory = PREFERRED_TRANSLATOR_SERVICE == "mymemory" and isinstance(translator, MyMemoryTranslator)
+                    is_primary_translator = is_primary_google or is_primary_mymemory
+
+                    FallbackTranslatorType = None
+                    if PREFERRED_TRANSLATOR_SERVICE == "google":
+                        FallbackTranslatorType = MyMemoryTranslator
+                    elif PREFERRED_TRANSLATOR_SERVICE == "mymemory":
+                        FallbackTranslatorType = GoogleTranslator
+                    
+                    is_problematic_result = len(result) < len(text.strip()) * 0.4
+
+                    if is_primary_translator and is_problematic_result and FallbackTranslatorType:
+                        primary_translator_name = translator.__class__.__name__
+                        fallback_translator_name = FallbackTranslatorType.__name__
+                        logging.warning(f"{primary_translator_name} result '({result})' is very short (original length {len(text.strip())}). Attempting fallback with {fallback_translator_name}.")
+                        
+                        found_fallback_translator = False
+                        original_primary_result = result # Keep the original short result
+
+                        for fallback_candidate in self.translators:
+                            if isinstance(fallback_candidate, FallbackTranslatorType):
+                                try:
+                                    logging.info(f"Attempting fallback translation with {fallback_translator_name} for: {text.strip()}")
+                                    fallback_result = fallback_candidate.translate(text.strip())
+                                    
+                                    # Check if fallback result is valid and not also problematic
+                                    if fallback_result and isinstance(fallback_result, str) and not (len(fallback_result) < len(text.strip()) * 0.4):
+                                        logging.info(f"Successfully translated with {fallback_translator_name} as fallback. New result: {fallback_result}")
+                                        self.consecutive_failures = 0 # Reset on successful fallback
+                                        return fallback_result # Return fallback result
+                                    else:
+                                        logging.warning(f"{fallback_translator_name} fallback result was also empty, invalid, or too short: '{fallback_result}'")
+                                except Exception as fb_e:
+                                    logging.warning(f"{fallback_translator_name} fallback attempt failed: {fb_e}")
+                                found_fallback_translator = True
+                                break # Tried one fallback translator, that's enough
+                        
+                        if not found_fallback_translator:
+                            logging.info(f"No {fallback_translator_name} instances found for fallback.")
+                        
+                        # If fallback was not attempted, failed, or its result was also problematic, return original primary result.
+                        self.consecutive_failures = 0 # Still a success from primary translator, albeit short
+                        return original_primary_result
+
+                    # If not the primary preferred translator, or if the result is not problematic, or no fallback type defined:
+                    self.consecutive_failures = 0  # Reset for any successful translation
                     return result
 
             except Exception as e:
@@ -816,18 +893,32 @@ class ChessTextProcessor:
             
             text_with_placeholders = "".join(processed_text_for_translation)
 
-            # تقسيم النص إلى أجزاء
+            # تقسيم النص إلى أجزاء (Refined chunking logic)
             chunks = []
-            current_chunk = []
-            for line in text.split('\n'):
-                if len(' '.join(current_chunk)) > chunk_size:
-                    chunks.append('\n'.join(current_chunk))
-                    current_chunk = []
-                current_chunk.append(line)
-            
-            if current_chunk:
-                chunks.append('\n'.join(current_chunk))
+            current_chunk_lines = []
+            current_chunk_char_count = 0
+            lines = text_with_placeholders.split('\n')
 
+            for i, line in enumerate(lines):
+                potential_line_len = len(line)
+                # Add 1 for newline if it's not the first line in the current chunk being built
+                len_if_added = current_chunk_char_count + potential_line_len + (1 if current_chunk_lines else 0)
+
+                if len_if_added > chunk_size and current_chunk_lines:
+                    chunks.append('\n'.join(current_chunk_lines))
+                    current_chunk_lines = [line] # Start new chunk with current line
+                    current_chunk_char_count = len(line)
+                else:
+                    if current_chunk_lines: # If not the first line in this chunk
+                        current_chunk_char_count += 1 # For the newline separator
+                    current_chunk_lines.append(line)
+                    current_chunk_char_count += len(line)
+            
+            # Add the last remaining chunk
+            if current_chunk_lines:
+                chunks.append('\n'.join(current_chunk_lines))
+            
+            # The rest of the method (translation of chunks, placeholder restoration) remains the same.
             # ترجمة كل جزء
             translated_chunks = []
             for chunk in chunks:
@@ -945,7 +1036,11 @@ class ChessTextProcessor:
 
     def create_metadata(self):
         """إنشاء المعلومات الوصفية للملف"""
-        current_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        # Address DeprecationWarning for datetime.utcnow()
+        # Import timezone if not already available, or use datetime.timezone.utc
+        # Assuming 'import datetime' or 'from datetime import datetime, timezone'
+        # Based on current imports 'from datetime import datetime', datetime.timezone.utc should work.
+        current_time = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         system_info = platform.uname()
         
         metadata = (
