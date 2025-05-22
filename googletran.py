@@ -698,7 +698,7 @@ class ChessTextProcessor:
             self.current_proxy_index = self.proxies.index(previous_proxy)
             return False
     
-    def translate_with_retry(self, text, max_retries=2): # Reduced max_retries
+    def translate_with_retry(self, text, max_retries=2, is_target_chunk=False): # Reduced max_retries, added is_target_chunk
         """ترجمة النص مع معالجة متقدمة للأخطاء وتغيير المترجمين"""
         if not text or not text.strip():
             return text
@@ -728,7 +728,11 @@ class ChessTextProcessor:
                     translator.session.headers['X-Attempt'] = str(attempt)
 
                 # محاولة الترجمة
+                if is_target_chunk:
+                    logging.info(f'TARGET CHUNK SENDING: {text.strip()}')
                 result = translator.translate(text.strip())
+                if is_target_chunk:
+                    logging.info(f'TARGET CHUNK RECEIVED: {result}')
                 
                 if result and isinstance(result, str):
                     self.consecutive_failures = 0  # إعادة تعيين عداد الفشل
@@ -737,6 +741,8 @@ class ChessTextProcessor:
             except Exception as e:
                 last_error = str(e)
                 logging.warning(f"فشل المحاولة {attempt + 1}: {last_error}")
+                if is_target_chunk:
+                    logging.info(f'TARGET CHUNK ATTEMPT {attempt + 1} FAILED: {last_error}')
                 
                 # زيادة عداد الفشل
                 self.consecutive_failures += 1
@@ -753,6 +759,8 @@ class ChessTextProcessor:
 
         # إذا فشلت كل المحاولات، نسجل الخطأ ونعيد النص الأصلي
         logging.error(f"فشلت جميع محاولات الترجمة. آخر خطأ: {last_error}")
+        if is_target_chunk:
+            logging.info(f'TARGET CHUNK FAILED - RETURNING ORIGINAL: {original_text}')
         return original_text
 
     def process_text_block(self, text, chunk_size=CHUNK_SIZE):
@@ -832,8 +840,15 @@ class ChessTextProcessor:
 
             # ترجمة كل جزء
             translated_chunks = []
+            # Determine if any chunk from this block will be a target chunk for logging
+            # This check is simplified because process_file is already sending only the target paragraph.
+            # Thus, any chunk from this specific paragraph is considered a target.
+            log_this_page_chunks = "female vag" in text # Check if the original full text contains the phrase
+
             for chunk in chunks:
-                translated_chunk = self.translate_with_retry(chunk)
+                # Pass the flag to translate_with_retry
+                # If the original text block (page) contained the target, all its chunks are logged.
+                translated_chunk = self.translate_with_retry(chunk, is_target_chunk=log_this_page_chunks)
                 translated_chunks.append(translated_chunk)
                 
                 # تأخير ذكي بين الأجزاء
@@ -875,74 +890,47 @@ class ChessTextProcessor:
             self.headers = self.get_advanced_headers()
 
     def process_file(self, input_filename):
-        """معالجة الملف مع تتبع كامل وإدارة الأخطاء"""
+        """معالجة الملف مع تتبع كامل وإدارة الأخطاء - *** معدل للاختبار المحدد ***"""
         try:
-            # التحقق من وجود الملف
-            if not os.path.exists(input_filename):
-                raise FileNotFoundError(f"الملف غير موجود: {input_filename}")
+            problematic_paragraph = """\
+…Wait
+I guess normally, I should be thinking along the lines of
+“Shit, was I just born? Am I a baby now?”
+But strangely, the only thought that seemed to pop up in
+my mind was “So the bright light at the end of the tunnel is the
+light coming through into the female vag…”
+Haha… lets not think about it anymore.
+"""
+            logging.info(f"بدء معالجة الفقرة المحددة للاختبار...")
+            print(f"بدء معالجة الفقرة المحددة للاختبار...")
 
-            # قراءة الملف
-            with open(input_filename, 'r', encoding='utf-8') as file:
-                content = file.read()
-
-            # إنشاء المعلومات الوصفية
-            metadata = self.create_metadata()
-
-            # تقسيم المحتوى إلى صفحات
-            pages = re.split(r'(=== الصفحة \d+ ===)', content)
-            total_pages = len([p for p in pages if p.strip()])
-            translated_pages = []
-            current_page = 1
-
-            # إنشاء ملف الترجمة
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = os.path.join(
-                os.path.dirname(input_filename),
-                f"translated_{timestamp}.txt"
-            )
-
-            # كتابة المعلومات الوصفية
+            # ترجمة الفقرة المحددة
+            translated_paragraph = self.process_text_block(problematic_paragraph)
+            
+            output_filename = "test_specific_translation.txt"
+            
+            # كتابة الفقرة المترجمة إلى ملف
             with open(output_filename, 'w', encoding='utf-8') as outfile:
-                outfile.write(metadata)
-                outfile.write("="*50 + "\n\n")
+                outfile.write("Original Paragraph (for reference):\n")
+                outfile.write("===================================\n")
+                outfile.write(problematic_paragraph + "\n\n")
+                outfile.write("Translated Paragraph:\n")
+                outfile.write("===================================\n")
+                outfile.write(translated_paragraph + "\n")
 
-                # معالجة كل صفحة
-                for i, page in enumerate(pages):
-                    if page.strip():
-                        try:
-                            logging.info(f"معالجة الصفحة {current_page} من {total_pages}")
-                            print(f"جاري معالجة الصفحة {current_page} من {total_pages}")
-
-                            # ترجمة الصفحة
-                            translated_page = self.process_text_block(page)
-                            translated_pages.append(translated_page)
-                            
-                            # كتابة الصفحة مباشرة إلى الملف
-                            outfile.write(translated_page + "\n")
-                            outfile.flush()  # ضمان حفظ البيانات
-                            
-                            current_page += 1
-                            
-                            # تدوير البروكسي كل عدة صفحات
-                            if current_page % 3 == 0:
-                                self.rotate_proxy()
-                                
-                        except Exception as e:
-                            logging.error(f"خطأ في معالجة الصفحة {current_page}: {str(e)}")
-                            # في حالة الخطأ، نحفظ النص الأصلي
-                            outfile.write(page + "\n")
-                            outfile.flush()
-
-                # كتابة معلومات المعالجة النهائية
-                completion_info = self.create_completion_info(current_page - 1)
-                outfile.write("\n" + completion_info)
-
-            logging.info(f"تم حفظ الترجمة في: {output_filename}")
-            print(f"✅ تم حفظ الترجمة في: {output_filename}")
+            logging.info(f"تم حفظ ترجمة الفقرة المحددة في: {output_filename}")
+            print(f"✅ تم حفظ ترجمة الفقرة المحددة في: {output_filename}")
             return output_filename
 
         except Exception as e:
-            logging.error(f"خطأ في معالجة الملف: {str(e)}")
+            logging.error(f"خطأ في معالجة الفقرة المحددة: {str(e)}", exc_info=True)
+            # في حالة الخطأ، نحاول كتابة ما يمكننا
+            try:
+                with open("test_specific_translation_error.txt", 'w', encoding='utf-8') as errfile:
+                    errfile.write(f"Error during processing specific paragraph:\n{str(e)}\n")
+                    errfile.write(f"Original paragraph was:\n{problematic_paragraph}\n")
+            except:
+                pass # If error file writing fails, nothing more to do here
             raise
 
     def create_metadata(self):
