@@ -30,58 +30,8 @@ DELAY_MAX = 5
 CHUNK_SIZE = 1000
 MAX_CONSECUTIVE_FAILURES = 3
 
-# إعداد Tor
-def setup_tor():
-    """محاولة أولية لإعداد وتكوين Tor. لا يتم الخروج عند الفشل هنا."""
-    try:
-        logging.info("بدء محاولة الإعداد الأولي لـ Tor (setup_tor العالمية)...")
-        # تكوين ملف Tor
-        tor_config = """
-SocksPort 9050
-ControlPort 9051
-CookieAuthentication 1
-DataDirectory /var/lib/tor
-RunAsDaemon 1
-ExitNodes {us},{nl},{de},{fr},{gb}
-StrictNodes 1
-CircuitBuildTimeout 60
-MaxCircuitDirtiness 600
-NumEntryGuards 8
-"""
-        with open('/tmp/torrc', 'w') as f:
-            f.write(tor_config)
-        
-        logging.info("تم إنشاء ملف /tmp/torrc.")
-        # نسخ الملف إلى المكان الصحيح
-        subprocess.run(['sudo', 'cp', '/tmp/torrc', '/etc/tor/torrc'], check=False) # check=False لتجنب إيقاف البرنامج إذا فشل sudo
-        subprocess.run(['sudo', 'chmod', '644', '/etc/tor/torrc'], check=False)
-        logging.info("تمت محاولة نسخ /tmp/torrc إلى /etc/tor/torrc وتغيير الأذونات.")
-        
-        # إعادة تشغيل Tor
-        logging.info("محاولة إعادة تشغيل خدمة Tor...")
-        subprocess.run(['sudo', 'service', 'tor', 'restart'], check=False)
-        time.sleep(5) # انتظار لإعادة التشغيل
-        logging.info("انتهت محاولة إعادة تشغيل خدمة Tor.")
-        
-        # لا تقم بتكوين البروكسي العام هنا (socks.set_default_proxy)
-        # هذا سيتم التعامل معه داخل الكلاس بعد التحقق الفعلي من أن Tor يعمل
-        
-        logging.info("انتهت المحاولة الأولية لإعداد Tor (setup_tor العالمية).")
-        return True # تشير إلى أن المحاولة تمت، وليس بالضرورة النجاح الكامل
-    except Exception as e:
-        print(f"خطأ خلال المحاولة الأولية لإعداد Tor (دالة setup_tor العالمية): {str(e)}")
-        logging.error(f"خطأ خلال المحاولة الأولية لإعداد Tor (دالة setup_tor العالمية): {str(e)}")
-        return False
-
-# محاولة تكوين SOCKS proxy مبدئيًا
-# لا نخرج من البرنامج إذا فشلت هذه الخطوة، الكلاس سيحاول التحقق والتعامل مع Tor
-print("محاولة الإعداد الأولي لـ Tor...")
-if setup_tor():
-    print("✅ تمت المحاولة الأولية لإعداد Tor (التحقق الفعلي من عمل الخدمة سيتم لاحقًا داخل المعالج).")
-else:
-    print("❌ فشلت المحاولة الأولية لإعداد Tor (قد تكون هناك مشكلة في صلاحيات sudo أو خدمة Tor نفسها).")
-# تم إزالة sys.exit(1) للسماح للبرنامج بالمتابعة
-
+# تم إزالة دالة setup_tor العالمية والطباعة المصاحبة لها.
+# يفترض الآن أن خدمة Tor مثبتة ومهيأة بشكل صحيح من قبل المستخدم.
 
 class ChessTextProcessor:
     def __init__(self):
@@ -124,7 +74,7 @@ class ChessTextProcessor:
             
             # إعداد User-Agent والهيدرز
             try:
-                self.user_agents = UserAgent(verify_ssl=False)
+                self.user_agents = UserAgent()
                 self.headers = self.get_advanced_headers()
             except Exception as e:
                 logging.warning(f"فشل في إعداد User-Agent المتقدم: {e}")
@@ -143,62 +93,142 @@ class ChessTextProcessor:
             logging.error(f"❌ فشل في تهيئة المعالج: {str(e)}")
             raise
 
-    def setup_tor_connection(self):
-        """إعداد اتصال Tor"""
-        try:
-            # إعادة تشغيل خدمة Tor
-            subprocess.run(['sudo', 'service', 'tor', 'restart'], check=True)
-            time.sleep(5)
+    def request_new_tor_circuit(self):
+        """محاولة طلب دائرة Tor جديدة عبر منفذ التحكم إذا كان متاحًا."""
+        logging.info("محاولة طلب دائرة Tor جديدة (NEWNYM)...")
+        # التحقق أولاً من توفر منفذ التحكم
+        sock_9051_check = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock_9051_check.settimeout(2) # مهلة قصيرة للتحقق
+        control_port_available = sock_9051_check.connect_ex(('127.0.0.1', 9051)) == 0
+        sock_9051_check.close()
 
-            # تكوين SOCKS
-            socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-            socket.socket = socks.socksocket
-
-            # التحقق من الاتصال
-            test_socket = socket.socket()
-            test_socket.settimeout(10)
-            test_socket.connect(('check.torproject.org', 443))
-            test_socket.close()
-
-            with Controller.from_port(port=9051) as controller:
-                try:
-                    controller.authenticate(password="9090")
-                except:
-                    controller.authenticate()
-                controller.signal(Signal.NEWNYM)
-                time.sleep(controller.get_newnym_wait())
-
-            logging.info("✅ تم إعداد اتصال Tor بنجاح")
-            return True
-
-        except Exception as e:
-            logging.error(f"خطأ في إعداد اتصال Tor: {str(e)}")
+        if not control_port_available:
+            logging.warning("منفذ التحكم Tor (9051) غير متاح. لا يمكن طلب دائرة جديدة.")
             return False
 
-    
-    
-    def verify_tor_service(self):
-        """التحقق من خدمة Tor وإعادة تشغيلها إذا لزم الأمر"""
         try:
-            # التحقق من وجود المجلدات الضرورية
-            required_dirs = ['/var/lib/tor', '/etc/tor', '/var/log/tor']
-            for dir_path in required_dirs:
-                if not os.path.exists(dir_path):
-                    subprocess.run(['sudo', 'mkdir', '-p', dir_path], check=True)
-                    subprocess.run(['sudo', 'chown', 'debian-tor:debian-tor', dir_path], check=True)
-                    
-            # التحقق من حالة الخدمة
-            status = subprocess.run(['systemctl', 'is-active', 'tor'], 
-                                  capture_output=True, 
-                                  text=True).stdout.strip()
-            
-            if status != 'active':
-                logging.info("خدمة Tor غير نشطة. جاري إعادة التشغيل...")
-                subprocess.run(['sudo', 'systemctl', 'restart', 'tor'], check=True)
-                time.sleep(5)
-            
+            with Controller.from_port(port=9051) as controller:
+                try:
+                    # محاولة المصادقة بدون كلمة مرور أولاً (شائع في الإعدادات الافتراضية)
+                    controller.authenticate()
+                    logging.info("تمت المصادقة مع Tor Controller بنجاح (بدون كلمة مرور).")
+                except Exception as auth_err_no_pass:
+                    logging.info(f"فشلت المصادقة بدون كلمة مرور: {auth_err_no_pass}. محاولة بكلمة مرور افتراضية '9090' أو كلمة مرور cookie...")
+                    try:
+                        # محاولة بكلمة مرور شائعة أو الاعتماد على مصادقة cookie إذا كانت مفعلة
+                        # إذا كان لديك كلمة مرور محددة، استخدمها هنا.
+                        # controller.authenticate(password="YOUR_PASSWORD")
+                        # أو الاعتماد على ملف cookie إذا كان Tor مهيأ لذلك
+                        controller.authenticate() # إعادة المحاولة قد تعمل إذا كان هناك cookie
+                    except Exception as auth_err_with_pass:
+                        logging.warning(f"فشل المصادقة مع Tor Controller (مع محاولة كلمة مرور/cookie): {auth_err_with_pass}. قد لا يتمكن البرنامج من طلب دوائر Tor جديدة.")
+                        return False # لا يمكن المتابعة بدون مصادقة ناجحة
+
+                controller.signal(Signal.NEWNYM)
+                wait_time = controller.get_newnym_wait()
+                logging.info(f"تم إرسال إشارة NEWNYM إلى Tor. الانتظار لمدة {wait_time} ثانية...")
+                time.sleep(wait_time)
+                logging.info("✅ تم طلب دائرة Tor جديدة بنجاح.")
+                return True
+        except ConnectionRefusedError:
+            logging.error("فشل الاتصال بمنفذ التحكم Tor (9051). تأكد من أن Tor يعمل وأن ControlPort مفعل ومتاح.")
+            return False
+        except Exception as e:
+            logging.error(f"خطأ غير متوقع عند طلب دائرة Tor جديدة: {str(e)}")
+            return False
+
+    def verify_tor_service(self):
+        """التحقق من أن خدمة Tor تعمل وتستمع على المنافذ المطلوبة."""
+        logging.info("التحقق من خدمة Tor...")
+        try:
+            # التحقق من حالة الخدمة (بدون sudo)
+            # هذا الأمر قد لا يعمل بدون صلاحيات كافية أو إذا لم تكن systemd هي نظام init
+            # لذا، سنعتمد بشكل أساسي على اختبار الاتصال بالمنافذ
+            try:
+                status_output = subprocess.run(['systemctl', 'is-active', 'tor'],
+                                     capture_output=True,
+                                     text=True, check=False) # check=False لتجنب الخطأ
+                status = status_output.stdout.strip()
+                if status == 'active':
+                    logging.info("systemctl: خدمة Tor نشطة.")
+                else:
+                    logging.warning(f"systemctl: خدمة Tor ليست نشطة (الحالة: {status}). stdout: {status_output.stdout}, stderr: {status_output.stderr}")
+            except FileNotFoundError:
+                logging.warning("systemctl غير موجود. لا يمكن التحقق من حالة خدمة Tor عبر systemctl.")
+            except Exception as e:
+                logging.warning(f"خطأ عند التحقق من حالة خدمة Tor عبر systemctl: {e}")
+
             # التحقق من المنافذ
-            for port in [9050, 9051]:
+            # منفذ SOCKS الرئيسي
+            port_9050_available = False
+            sock_9050 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock_9050.settimeout(5) # تعيين مهلة للاتصال
+            result_9050 = sock_9050.connect_ex(('127.0.0.1', 9050))
+            sock_9050.close()
+            if result_9050 == 0:
+                logging.info("المنفذ 9050 (SOCKS) متاح.")
+                port_9050_available = True
+            else:
+                logging.warning("المنفذ 9050 (SOCKS) غير متاح.")
+                # لا نرجع False فورًا، قد يكون منفذ التحكم كافيًا لبعض العمليات أو قد يكون المستخدم يستخدم منفذًا مختلفًا
+            
+            # منفذ التحكم (اختياري للاستخدام العام، لكن جيد للتحقق)
+            port_9051_available = False
+            sock_9051 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock_9051.settimeout(5)
+            result_9051 = sock_9051.connect_ex(('127.0.0.1', 9051))
+            sock_9051.close()
+            if result_9051 == 0:
+                logging.info("المنفذ 9051 (ControlPort) متاح.")
+                port_9051_available = True
+            else:
+                logging.warning("المنفذ 9051 (ControlPort) غير متاح. تجديد دوائر Tor قد لا يعمل.")
+
+            if not port_9050_available:
+                logging.error("منفذ Tor SOCKS (9050) الرئيسي غير متاح. لا يمكن استخدام Tor.")
+                return False
+
+            # اختبار الاتصال الفعلي عبر بروكسي Tor (إذا كان المنفذ 9050 متاحًا)
+            # هذا هو الاختبار الأهم
+            logging.info("محاولة اختبار الاتصال الفعلي عبر بروكسي Tor (127.0.0.1:9050)...")
+            session = requests.Session()
+            session.proxies = {
+                'http': 'socks5h://127.0.0.1:9050',
+                'https': 'socks5h://127.0.0.1:9050'
+            }
+            
+            # استخدام هيدر بسيط للاختبار
+            test_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36'}
+
+            response = session.get('https://check.torproject.org/', timeout=20, headers=test_headers) # زيادة المهلة
+            if 'Congratulations. This browser is configured to use Tor.' in response.text or 'مبارك. هذا المتصفح مهيأ لاستخدام Tor.' in response.text:
+                logging.info("✅ تم التحقق من خدمة Tor بنجاح والاتصال عبرها يعمل.")
+                return True
+            else:
+                logging.error(f"❌ الاتصال ليس عبر شبكة Tor أو فشل التحقق. محتوى الصفحة: {response.text[:200]}...") # طباعة جزء من المحتوى للمساعدة في التشخيص
+                return False
+
+        except requests.exceptions.ProxyError as e:
+            logging.error(f"خطأ بروكسي عند التحقق من خدمة Tor (ربما Tor لا يعمل أو المنفذ 9050 مغلق): {e}")
+            return False
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"خطأ اتصال عند التحقق من خدمة Tor (ربما check.torproject.org معطل أو هناك مشكلة شبكة): {e}")
+            return False
+        except requests.exceptions.Timeout:
+            logging.error("انتهت مهلة الاتصال عند محاولة التحقق من خدمة Tor عبر check.torproject.org.")
+            return False
+        except Exception as e:
+            logging.error(f"خطأ غير متوقع في التحقق من خدمة Tor: {str(e)}")
+            return False
+
+    def check_tor_status(self):
+        """التحقق من حالة Tor (هذه الدالة مشابهة لـ verify_tor_service ولكن أقل تفصيلاً)"""
+        # يمكن تبسيط هذه الدالة أو دمجها مع verify_tor_service
+        # حاليًا، verify_tor_service هي الأكثر شمولاً
+        logging.info("التحقق من حالة Tor (check_tor_status)...")
+        try:
+            # التحقق من المنافذ
+            for port in [9050]: # التركيز على منفذ SOCKS الأساسي
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 result = sock.connect_ex(('127.0.0.1', port))
                 sock.close()
@@ -558,23 +588,12 @@ class ChessTextProcessor:
 
     def renew_tor_circuit(self):
         """محاولة تجديد دائرة Tor."""
-        logging.info("محاولة تجديد دائرة Tor...")
-        if self.tor_enabled:
-            try:
-                # محاولة استخدام setup_tor_connection لتجديد الدائرة
-                # هذه الدالة تقوم بـ NEWNYM
-                if self.setup_tor_connection():
-                    logging.info("تم طلب دائرة Tor جديدة بنجاح (عبر setup_tor_connection).")
-                    return True
-                else:
-                    logging.warning("فشل طلب دائرة Tor جديدة (عبر setup_tor_connection).")
-                    return False
-            except Exception as e:
-                logging.error(f"خطأ أثناء محاولة تجديد دائرة Tor: {e}")
-                return False
-        else:
+        if not self.tor_enabled:
             logging.warning("Tor غير مفعل، لا يمكن تجديد الدائرة.")
             return False
+
+        logging.info("محاولة تجديد دائرة Tor عبر request_new_tor_circuit...")
+        return self.request_new_tor_circuit()
 
     def rotate_translator(self):
         """تدوير المترجم المستخدم."""
@@ -646,26 +665,34 @@ class ChessTextProcessor:
             self.proxies = []
             
             if self.tor_enabled: # التحقق من تفعيل Tor
-                tor_proxy_configs = [
-                    {
-                        'url': 'socks5h://127.0.0.1:9050',
-                        'name': 'Tor Primary',
-                        'type': 'tor'
-                    },
-                    {
-                        'url': 'socks5h://127.0.0.1:9150',
-                        'name': 'Tor Browser',
-                        'type': 'tor'
-                    }
-                ]
-                for config in tor_proxy_configs:
-                    if self.test_proxy(config['url']):
-                        self.proxies.append(config)
-                        logging.info(f"تم إضافة بروكسي Tor: {config['name']}")
-                    else:
-                        logging.warning(f"فشل اختبار بروكسي Tor {config['name']} ({config['url']}). لن يتم إضافته.")
+                # البروكسي الأساسي لـ Tor
+                primary_tor_config = {
+                    'url': 'socks5h://127.0.0.1:9050',
+                    'name': 'Tor Primary (9050)',
+                    'type': 'tor'
+                }
+                if self.test_proxy(primary_tor_config['url']):
+                    self.proxies.append(primary_tor_config)
+                    logging.info(f"تم إضافة بروكسي Tor الأساسي: {primary_tor_config['name']}")
+                else:
+                    logging.warning(f"فشل اختبار بروكسي Tor الأساسي {primary_tor_config['name']} ({primary_tor_config['url']}). لن يتم إضافته. تأكد أن خدمة Tor تعمل على هذا المنفذ.")
 
-            # إضافة اتصال مباشر كخيار دائم
+                # بروكسي Tor Browser (اختياري ويعتبر ثانوي)
+                tor_browser_proxy_config = {
+                    'url': 'socks5h://127.0.0.1:9150',
+                    'name': 'Tor Browser (9150)',
+                    'type': 'tor'
+                }
+                # اختباره بهدوء أكبر، لأنه أقل أهمية من الأساسي
+                if self.test_proxy(tor_browser_proxy_config['url'], timeout=5): # مهلة أقصر للاختبار
+                    self.proxies.append(tor_browser_proxy_config)
+                    logging.info(f"تم إضافة بروكسي Tor Browser: {tor_browser_proxy_config['name']}")
+                else:
+                    logging.info(f"بروكسي Tor Browser {tor_browser_proxy_config['name']} ({tor_browser_proxy_config['url']}) غير متاح أو فشل اختباره. هذا طبيعي إذا لم يكن متصفح Tor يعمل.")
+            else:
+                logging.info("Tor غير مفعل (self.tor_enabled = False). لن يتم إعداد بروكسيات Tor.")
+
+            # إضافة اتصال مباشر كخيار دائم وأساسي
             self.proxies.append({
                 'url': None,
                 'name': 'Direct Connection',
@@ -751,10 +778,14 @@ class ChessTextProcessor:
 
         for attempt in range(max_retries):
             try:
-                # تجديد اتصال Tor قبل كل محاولة
-                if attempt > 0:
-                    self.renew_tor_circuit()
-                    time.sleep(2)  # انتظار بعد تجديد المسار
+                # تجديد اتصال Tor قبل كل محاولة إذا كان Tor مفعل والبروكسي الحالي هو Tor
+                current_proxy_settings = self.proxies[self.current_proxy_index]
+                if attempt > 0 and self.tor_enabled and current_proxy_settings['type'] == 'tor':
+                    logging.info(f"محاولة تجديد دائرة Tor قبل المحاولة {attempt + 1} للترجمة...")
+                    if self.renew_tor_circuit():
+                        time.sleep(2)  # انتظار بعد تجديد المسار الناجح
+                    else:
+                        logging.warning("فشل تجديد دائرة Tor، الاستمرار بالدائرة الحالية أو البروكسي الحالي.")
 
                 # اختيار المترجم
                 translator = self.translators[self.current_translator_index]
@@ -956,7 +987,7 @@ class ChessTextProcessor:
 
     def create_metadata(self):
         """إنشاء المعلومات الوصفية للملف"""
-        current_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        current_time = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         system_info = platform.uname()
         
         metadata = (
