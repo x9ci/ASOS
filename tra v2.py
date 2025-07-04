@@ -4,7 +4,7 @@ import logging
 import subprocess
 import platform
 import psutil
-from datetime import datetime
+from datetime import datetime, timezone
 import socket
 import requests
 import socks  # استخدام socks بدلاً من PySocks
@@ -987,7 +987,7 @@ class ChessTextProcessor:
 
     def create_metadata(self):
         """إنشاء المعلومات الوصفية للملف"""
-        current_time = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         system_info = platform.uname()
         
         metadata = (
