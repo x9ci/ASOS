@@ -1,31 +1,70 @@
 import google.generativeai as genai
+import os
+import time
+import re
 
-def translate_text(api_key: str, text_to_translate: str, target_language: str = "ar") -> str:
+# Configuration
+GEMINI_MODEL_NAME = "gemini-1.5-flash-latest" # أو "gemini-1.5-pro-latest" لجودة أعلى محتملة
+MAX_RETRIES = 3
+RETRY_DELAY_SECONDS = 5
+# حجم الجزء التقريبي بالكلمات، يمكن تعديله بناءً على أداء API وسياق النص
+# Gemini 1.5 Pro has a context window of up to 1 million tokens. Flash is also large.
+# We are more likely to be limited by practical processing time or API rate limits per minute.
+# Let's aim for ~5000 characters as a general guideline per chunk, but prioritize semantic breaks.
+TARGET_CHUNK_CHAR_LENGTH = 5000
+
+def translate_text(api_key: str, text_to_translate: str, target_language: str = "ar", attempt: int = 1) -> str:
     """
-    Translates text to the target language using the Gemini API.
+    Translates text to the target language using the Gemini API with improved prompt.
 
     Args:
         api_key: Your Gemini API key.
         text_to_translate: The text to be translated.
         target_language: The target language code (e.g., "ar" for Arabic).
+        attempt: The current retry attempt number (for logging/debugging).
 
     Returns:
         The translated text, or an error message if translation fails.
     """
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
-        prompt = f"Translate the following text to {target_language}: {text_to_translate}"
+        # Configure API key for each call if not globally configured or if key might change.
+        # genai.configure(api_key=api_key) # تم تكوينه مرة واحدة في بداية البرنامج الرئيسي
+
+        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+
+        # Prompt مصمم لترجمة أدبية شبيهة بالبشر
+        prompt = f"""You are an expert literary translator. Your task is to translate the following English text, which is part of a novel, into natural, fluent, and contextually appropriate {target_language}.
+Maintain the original tone, style, and nuances. Avoid literal translation and aim for a translation that reads as if it were originally written in {target_language}.
+Preserve paragraph breaks (translate blank lines between paragraphs as blank lines).
+Do NOT translate or include page markers like '=== Page X ==='.
+Input Text:
+---
+{text_to_translate}
+---
+Translated Text ({target_language}):"""
+
+        # print(f"Attempt {attempt}: Sending text to Gemini: {text_to_translate[:100]}...") # For debugging
         response = model.generate_content(prompt)
-        return response.text
+
+        if response.parts:
+            # print(f"Attempt {attempt}: Received response from Gemini.") # For debugging
+            return response.text.strip()
+        else:
+            # Handle cases where the response might be empty or blocked
+            block_reason = response.prompt_feedback.block_reason if response.prompt_feedback else "Unknown"
+            safety_ratings = response.prompt_feedback.safety_ratings if response.prompt_feedback else "N/A"
+            error_message = f"An error occurred: Translation result was empty. Block reason: {block_reason}. Safety ratings: {safety_ratings}"
+            print(error_message)
+            return error_message
+
     except Exception as e:
-        return f"An error occurred: {e}"
-
-import os
-
-# --- وظيفة الترجمة الأساسية (موجودة بالفعل) ---
-# def translate_text(api_key: str, text_to_translate: str, target_language: str = "ar") -> str:
-# ... (الكود السابق لدالة translate_text)
+        error_message = f"An error occurred during translation (attempt {attempt}): {e}"
+        print(error_message)
+        # Check for specific API errors if needed, e.g., quota exceeded, billing issues
+        if "API key not valid" in str(e):
+             print("Critical Error: The provided API key is not valid. Please check your GEMINI_API_KEY environment variable.")
+             # We might want to stop all operations if the API key is invalid.
+        return error_message
 
 
 def read_text_file(filepath: str) -> str | None:
@@ -48,8 +87,8 @@ def translate_book_file(api_key: str, filepath: str, target_language: str = "ar"
         api_key: Your Gemini API key.
         filepath: Path to the text file (.txt).
         target_language: The target language code.
-        chunk_size: Max number of characters to send per API request.
-                     Adjust based on API limits and typical paragraph sizes.
+        chunk_size: Approximate target character length for each chunk.
+                    The actual chunking will prioritize semantic breaks (paragraphs, page markers).
 
     Returns:
         The full translated text, or None if an error occurs.
@@ -71,52 +110,180 @@ def translate_book_file(api_key: str, filepath: str, target_language: str = "ar"
         print(f"Warning: The file {filepath} is empty or contains only whitespace.")
         return "" # Return empty string for empty file content
 
-    translated_parts = []
-    current_position = 0
-    total_length = len(original_text)
-    chunk_number = 0
+    # Args:
+    #     api_key: Your Gemini API key.
+    #     filepath: Path to the text file (.txt).
+    #     target_language: The target language code.
+    #     chunk_size: Approximate target character length for each chunk.
+    #                 The actual chunking will prioritize semantic breaks (paragraphs).
 
-    print(f"Starting translation of {filepath} ({total_length} characters)...")
-    while current_position < total_length:
-        chunk_number += 1
-        end_of_chunk = min(current_position + chunk_size, total_length)
+    # Returns:
+    #     The full translated text, or None if an error occurs.
+    # """
+    # if not os.path.exists(filepath):
+    #     print(f"Error: Input file not found at {filepath}")
+    #     return None
 
-        actual_end = original_text.rfind('\n', current_position, end_of_chunk) + 1
-        if actual_end <= current_position:
-             actual_end = original_text.rfind('.', current_position, end_of_chunk) + 1
-             if actual_end <= current_position:
-                 actual_end = end_of_chunk
+    # file_extension = os.path.splitext(filepath)[1].lower()
+    # if file_extension != ".txt":
+    #     print(f"Error: Unsupported file type '{file_extension}'. Currently only .txt files are supported.")
+    #     return None
 
-        text_chunk = original_text[current_position:actual_end].strip()
+    # original_text = read_text_file(filepath)
+    # if original_text is None:
+    #     return None
 
-        if not text_chunk:
-            current_position = actual_end
-            continue
+    # if not original_text.strip():
+    #     print(f"Warning: The file {filepath} is empty or contains only whitespace.")
+    #     return ""
 
-        print(f"Translating chunk {chunk_number} (characters {current_position}-{actual_end-1}/{total_length})...")
+    # Split text by page markers first to process page by page
+    # (=== Page \d+ ===) is a capturing group to keep the page markers temporarily for page number extraction
+    pages_content = re.split(r'(=== Page \d+ ===)', original_text)
 
-        try:
-            translated_chunk = translate_text(api_key, text_chunk, target_language)
-            if "An error occurred:" in translated_chunk:
-                # This check is based on the current error string from translate_text
-                # It might be better for translate_text to raise an exception
-                print(f"API Error translating chunk {chunk_number}: {translated_chunk}")
-                # Option: retry logic here?
-                # For now, we append the error or a placeholder and continue
-                # translated_parts.append(f"[--ERROR IN CHUNK {chunk_number}--]")
-                return f"Translation failed due to an API error in chunk {chunk_number}: {translated_chunk}" # Stop all translation
-            translated_parts.append(translated_chunk)
-        except Exception as e:
-            print(f"Critical error during translation of chunk {chunk_number}: {e}")
-            # return f"Translation failed due to a critical error in chunk {chunk_number}." # Stop all translation
-            translated_parts.append(f"[--CRITICAL ERROR IN CHUNK {chunk_number}--]") # Or try to continue
+    Args:
+        api_key: Your Gemini API key.
+        filepath: Path to the text file (.txt).
+        target_language: The target language code.
+        chunk_size: Approximate target character length for each chunk.
+                    The actual chunking will prioritize semantic breaks (paragraphs).
 
-        current_position = actual_end
-        # import time # Add at the top of the file
-        # time.sleep(1) # Basic rate limiting if needed
+    Returns:
+        The full translated text, or None if an error occurs.
+    """
+    if not os.path.exists(filepath):
+        print(f"Error: Input file not found at {filepath}")
+        return None
+
+    file_extension = os.path.splitext(filepath)[1].lower()
+    if file_extension != ".txt":
+        print(f"Error: Unsupported file type '{file_extension}'. Currently only .txt files are supported.")
+        return None
+
+    original_text = read_text_file(filepath)
+    if original_text is None:
+        return None
+
+    if not original_text.strip():
+        print(f"Warning: The file {filepath} is empty or contains only whitespace.")
+        return ""
+
+    # Split text by page markers first to process page by page
+    # (=== Page \d+ ===) is a capturing group to keep the page markers temporarily for page number extraction
+    pages_content = re.split(r'(=== Page \d+ ===)', original_text)
+
+    full_translated_text = []
+    current_page_number = 0
+
+    text_accumulator_for_page = ""
+
+    print(f"Starting translation of {filepath} by pages...")
+
+    for i, part in enumerate(pages_content):
+        part_stripped = part.strip()
+        is_page_marker = part_stripped.startswith("===") and part_stripped.endswith("===")
+
+        if is_page_marker:
+            # If there's accumulated text from the PREVIOUS page, translate and add it
+            if text_accumulator_for_page.strip():
+                print(f"Translating content for page {current_page_number} (approx {len(text_accumulator_for_page)} chars)...")
+                translated_page_content = _translate_page_content_in_chunks(api_key, text_accumulator_for_page, target_language, chunk_size)
+                if "Translation failed" in translated_page_content or "An error occurred:" in translated_page_content :
+                     return f"Translation failed for page {current_page_number}. Error: {translated_page_content}"
+                full_translated_text.append(translated_page_content.strip())
+                # Add previous page number
+                if current_page_number > 0:
+                    full_translated_text.append(f"\n\n{current_page_number}\n\n")
+
+            # Extract new page number
+            match = re.search(r'=== Page (\d+) ===', part_stripped)
+            if match:
+                current_page_number = int(match.group(1))
+            print(f"Moving to Page {current_page_number}")
+            text_accumulator_for_page = "" # Reset accumulator for the new page
+        else:
+            # This is content for the current page, add it to accumulator
+            text_accumulator_for_page += part
+
+    # Translate any remaining content for the last page
+    if text_accumulator_for_page.strip():
+        print(f"Translating content for final page {current_page_number} (approx {len(text_accumulator_for_page)} chars)...")
+        translated_page_content = _translate_page_content_in_chunks(api_key, text_accumulator_for_page, target_language, chunk_size)
+        if "Translation failed" in translated_page_content or "An error occurred:" in translated_page_content:
+            return f"Translation failed for final page {current_page_number}. Error: {translated_page_content}"
+        full_translated_text.append(translated_page_content.strip())
+        # Add the last page number
+        if current_page_number > 0:
+            full_translated_text.append(f"\n\n{current_page_number}\n\n")
 
     print("Translation process complete.")
-    return "\n".join(translated_parts)
+    return "".join(full_translated_text).strip()
+
+
+def _translate_page_content_in_chunks(api_key: str, page_text: str, target_language: str, chunk_size: int) -> str:
+    """
+    Helper function to translate the content of a single page, handling chunking by paragraphs.
+    """
+    if not page_text.strip():
+        return ""
+
+    # Split page content by one or more newlines to get paragraphs or text blocks
+    paragraphs = re.split(r'(\n\n+)', page_text)
+    # Filter out empty strings that might result from split, but keep the newline groups
+    paragraphs = [p for p in paragraphs if p]
+
+    translated_paragraphs = []
+    current_chunk_to_translate = ""
+
+    for i, para_or_break in enumerate(paragraphs):
+        is_break = bool(re.fullmatch(r'\n\n+', para_or_break))
+
+        if is_break:
+            # If there's text accumulated, translate it before adding the break
+            if current_chunk_to_translate.strip():
+                translated_chunk = _translate_with_retries(api_key, current_chunk_to_translate, target_language)
+                if "An error occurred:" in translated_chunk: return translated_chunk # Propagate error
+                translated_paragraphs.append(translated_chunk)
+                current_chunk_to_translate = ""
+            translated_paragraphs.append(para_or_break) # Add the paragraph break itself
+        else: # It's a text paragraph
+            # Check if adding this paragraph exceeds chunk_size (approximate)
+            if len(current_chunk_to_translate) + len(para_or_break) > chunk_size and current_chunk_to_translate.strip():
+                # Translate the current accumulated chunk
+                translated_chunk = _translate_with_retries(api_key, current_chunk_to_translate, target_language)
+                if "An error occurred:" in translated_chunk: return translated_chunk
+                translated_paragraphs.append(translated_chunk)
+                current_chunk_to_translate = para_or_break # Start new chunk with current paragraph
+            else:
+                # Append paragraph to current chunk, ensure single newline separation if needed
+                if current_chunk_to_translate.strip() and para_or_break.strip():
+                    current_chunk_to_translate += "\n" + para_or_break # Ensure single newline, not double
+                else:
+                    current_chunk_to_translate += para_or_break
+
+    # Translate any remaining text in the last chunk
+    if current_chunk_to_translate.strip():
+        translated_chunk = _translate_with_retries(api_key, current_chunk_to_translate, target_language)
+        if "An error occurred:" in translated_chunk: return translated_chunk
+        translated_paragraphs.append(translated_chunk)
+
+    return "".join(translated_paragraphs)
+
+
+def _translate_with_retries(api_key: str, text_chunk: str, target_language: str) -> str:
+    """Helper function to handle retries for translate_text."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        translated_chunk = translate_text(api_key, text_chunk, target_language, attempt=attempt)
+        if "An error occurred:" not in translated_chunk:
+            return translated_chunk
+        if "API key not valid" in translated_chunk: # Critical error, no point retrying
+            return translated_chunk
+        if attempt < MAX_RETRIES:
+            print(f"Retrying in {RETRY_DELAY_SECONDS} seconds...")
+            time.sleep(RETRY_DELAY_SECONDS)
+    print(f"Failed to translate chunk after {MAX_RETRIES} attempts: {text_chunk[:100]}...")
+    return f"An error occurred: Failed to translate after {MAX_RETRIES} retries. Last error: {translated_chunk}"
+
 
 def save_text_to_file(text: str, output_filepath: str) -> bool:
     """Saves the given text to a file."""
@@ -142,84 +309,101 @@ if __name__ == '__main__':
         print("Example (Windows CMD): set GEMINI_API_KEY=your_api_key_here")
         print("Example (Windows PowerShell): $env:GEMINI_API_KEY='your_api_key_here'")
     else:
-        # --- Test 1: Basic Text Translation ---
-        print(f"\n--- Test 1: Basic Text Translation ---")
-        text_to_translate = "Hello, world! This is a test of the translation function. This should be translated to Arabic."
-        translated_text = translate_text(API_KEY, text_to_translate, target_language="ar")
-        print(f"Original: {text_to_translate}")
-        print(f"Translated (ar): {translated_text}")
+        # --- تكوين Gemini API Key ---
+        try:
+            genai.configure(api_key=API_KEY)
+            print("Gemini API Key configured successfully.")
+        except Exception as e:
+            print(f"Error configuring Gemini API: {e}")
+            print("Please ensure your GEMINI_API_KEY is correct and has the necessary permissions.")
+            return # Exit if API key is not configured
 
-        # --- Test 2: File Translation ---
-        print(f"\n--- Test 2: File Translation ---")
-        test_file_content = """First paragraph.
-This is a sample text that will be used to test the file translation functionality.
-It includes multiple lines and paragraphs.
+        # --- Test 1: Basic Text Translation (Optional, can be commented out) ---
+        print(f"\n--- Test 1: Basic Text Translation (Test Prompt) ---")
+        sample_text_for_prompt_test = "This is a test paragraph.\n\nThis is another paragraph after a blank line.\n=== Page 1 ==="
+        translated_sample_text = translate_text(API_KEY, sample_text_for_prompt_test, target_language="ar")
+        print(f"Original Sample:\n{sample_text_for_prompt_test}")
+        print(f"Translated Sample (ar):\n{translated_sample_text}")
 
-Second paragraph.
-The purpose is to ensure that the text is read correctly, chunked if necessary,
-translated by the Gemini API, and then reassembled accurately.
-We are also checking if newlines are preserved.
+        # --- Test 2: File Translation using 'document.txt' ---
+        print(f"\n--- Test 2: File Translation ('document.txt') ---")
 
-Let's add a very long sentence to see how chunking might behave or if the API handles it well within a reasonable chunk size: The quick brown fox jumps over the lazy dog near the bank of the river, and this event, while seemingly trivial, is often used in typography and font testing to display all the letters of the alphabet, ensuring that each character is rendered correctly and legibly across various display mediums.
+        input_filename_main = "document.txt" # هذا هو الملف الرئيسي الذي سنستخدمه
 
-Final paragraph.
-End of test content.
+        if not os.path.exists(input_filename_main):
+            print(f"Error: Main test file '{input_filename_main}' not found. Please ensure it exists in the same directory.")
+            # Create a dummy document.txt if it doesn't exist for basic testing
+            print(f"Creating a dummy '{input_filename_main}' for testing purposes.")
+            dummy_content = """=== Page 1 ===
+This is the first line of the first paragraph.
+This is the second line of the first paragraph.
+
+This is the first line of the second paragraph.
+This is a very long sentence to test how chunking behaves when it encounters sentences that might be longer than the ideal chunk size, pushing the boundaries of our segmentation logic and ensuring that the system can gracefully handle such edge cases without losing context or breaking the narrative flow.
+
+=== Page 2 ===
+This is a paragraph on the second page.
+It has some more text.
+
+Another paragraph to conclude the dummy file.
 """
-        test_input_filename = "sample_book_to_translate.txt"
-        with open(test_input_filename, "w", encoding="utf-8") as f:
-            f.write(test_file_content)
-        print(f"Created a sample input file: {test_input_filename}")
+            with open(input_filename_main, "w", encoding="utf-8") as f:
+                f.write(dummy_content)
+            print(f"Dummy '{input_filename_main}' created.")
 
-        target_output_filename = "translated_sample_book.txt"
+        target_output_filename_main = f"translated_{os.path.splitext(input_filename_main)[0]}_ar.txt"
 
-        print(f"\nTranslating '{test_input_filename}' to '{target_output_filename}'...")
-        translated_book_content = translate_book_file(API_KEY, test_input_filename, target_language="ar", chunk_size=1500) # Smaller chunk size for testing
+        print(f"\nTranslating '{input_filename_main}' to '{target_output_filename_main}'...")
+        # Using the global TARGET_CHUNK_CHAR_LENGTH for chunk_size
+        translated_book_content = translate_book_file(API_KEY, input_filename_main, target_language="ar", chunk_size=TARGET_CHUNK_CHAR_LENGTH)
 
         if translated_book_content:
-            if "Translation failed due to an API error" in translated_book_content or \
-               "CRITICAL ERROR IN CHUNK" in translated_book_content:
-                print("\n--- Partial or Failed Translation Output ---")
-                print(translated_book_content)
-                print(f"There was an error during translation. Full content might not be saved or accurate.")
+            # Check for known error strings from the translation functions
+            if "Translation failed" in translated_book_content or \
+               "An error occurred:" in translated_book_content and not translated_book_content.startswith("An error occurred: Translation result was empty"): # Allow empty result error for single small chunks
+                print("\n--- Translation Process Encountered an Error ---")
+                print(f"Error details: {translated_book_content}")
+                print(f"Full content might not be translated or accurate. Check logs/output file for details.")
+                # Save whatever was translated, or the error message
+                save_text_to_file(translated_book_content, target_output_filename_main)
+            elif "Translation result was empty" in translated_book_content:
+                print("\n--- Translation Warning ---")
+                print(f"Warning details: {translated_book_content}")
+                print(f"Some parts might be empty. Check output file.")
+                save_text_to_file(translated_book_content, target_output_filename_main)
             else:
-                print("\n--- Full Translated Book Content (First 500 chars) ---")
-                print(translated_book_content[:500] + "..." if len(translated_book_content) > 500 else translated_book_content)
-
-            save_text_to_file(translated_book_content, target_output_filename)
+                print("\n--- Full Translated Book Content (First 1000 chars) ---")
+                print(translated_book_content[:1000] + "..." if len(translated_book_content) > 1000 else translated_book_content)
+                if save_text_to_file(translated_book_content, target_output_filename_main):
+                    print(f"Successfully saved translated content to '{target_output_filename_main}'")
+                else:
+                    print(f"Failed to save translated content to '{target_output_filename_main}'")
         else:
             # This case might occur if read_text_file returns None or other pre-translation errors.
-            print(f"Failed to translate the book file: {test_input_filename}. No content was returned.")
+            print(f"Failed to translate the book file: {input_filename_main}. No content was returned from translate_book_file.")
 
-        # --- Test 3: Non-existent file ---
-        print(f"\n--- Test 3: Non-existent input file ---")
-        translate_book_file(API_KEY, "non_existent_file.txt")
+        # --- Additional Test Cases (as before, can be enabled/disabled) ---
+        run_additional_tests = False # Set to True to run these
+        if run_additional_tests:
+            print(f"\n--- Test 3: Non-existent input file ---")
+            translate_book_file(API_KEY, "non_existent_file.txt")
 
-        # --- Test 4: Unsupported file type ---
-        print(f"\n--- Test 4: Unsupported file type ---")
-        empty_pdf_filename = "dummy.pdf"
-        with open(empty_pdf_filename, "w") as f: # Create dummy pdf for test
-            f.write("")
-        translate_book_file(API_KEY, empty_pdf_filename)
-        os.remove(empty_pdf_filename) # Clean up dummy pdf
+            print(f"\n--- Test 4: Unsupported file type ---")
+            empty_pdf_filename = "dummy.pdf"
+            with open(empty_pdf_filename, "w", encoding="utf-8") as f: f.write("")
+            translate_book_file(API_KEY, empty_pdf_filename)
+            if os.path.exists(empty_pdf_filename): os.remove(empty_pdf_filename)
 
-        # --- Test 5: Empty input file ---
-        print(f"\n--- Test 5: Empty input file ---")
-        empty_txt_filename = "empty.txt"
-        with open(empty_txt_filename, "w") as f:
-            f.write("")
-        translated_empty_content = translate_book_file(API_KEY, empty_txt_filename)
-        if translated_empty_content == "":
-             print(f"Translation of empty file '{empty_txt_filename}' handled correctly (returned empty string).")
-        else:
-             print(f"Error: Translation of empty file '{empty_txt_filename}' did not return empty string.")
-        save_text_to_file(translated_empty_content, f"translated_{empty_txt_filename}")
-        os.remove(empty_txt_filename)
+            print(f"\n--- Test 5: Empty input file ---")
+            empty_txt_filename = "empty.txt"
+            with open(empty_txt_filename, "w", encoding="utf-8") as f: f.write("")
+            translated_empty_content = translate_book_file(API_KEY, empty_txt_filename)
+            if translated_empty_content == "":
+                 print(f"Translation of empty file '{empty_txt_filename}' handled correctly.")
+            else:
+                 print(f"Error: Translation of empty file '{empty_txt_filename}' did not return empty string: '{translated_empty_content}'")
+            save_text_to_file(translated_empty_content, f"translated_{empty_txt_filename}")
+            if os.path.exists(empty_txt_filename): os.remove(empty_txt_filename)
+            if os.path.exists(f"translated_{empty_txt_filename}"): os.remove(f"translated_{empty_txt_filename}")
 
-
-        # To keep the main sample files for review:
-        # print(f"\nInput file '{test_input_filename}' and output file '{target_output_filename}' (if successful) are kept for review.")
-        # If you want to automatically clean them up:
-        # if os.path.exists(test_input_filename):
-        #     os.remove(test_input_filename)
-        # if os.path.exists(target_output_filename):
-        #     os.remove(target_output_filename)
+        print(f"\n--- Main test completed. Please check '{target_output_filename_main}' for the translated output. ---")
