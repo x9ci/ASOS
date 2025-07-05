@@ -241,17 +241,24 @@ if __name__ == '__main__':
 
         logging.info(f"\n--- Main File Translation ---")
 
-        # طلب اسم الملف من المستخدم
-        input_filename_main = input("الرجاء إدخال اسم ملف النص (txt.) الذي تريد ترجمته (مثال: my_book.txt): ").strip()
+        # --- تحديد ملف الإدخال الرئيسي ---
+        # !!! قم بتعديل هذا المسار ليشير إلى ملفك المطلوب !!!
+        input_filename_main = "document.txt"  # <--- غيّر هذا المسار هنا
+        # مثال لمسار كامل:
+        # input_filename_main = "/path/to/your/book.txt"
+        # أو إذا كان الملف في نفس مجلد البرنامج:
+        # input_filename_main = "my_novel.txt"
 
-        if not input_filename_main:
-            logging.critical("لم يتم إدخال اسم ملف. الخروج من البرنامج.")
-            print("لم يتم إدخال اسم ملف. يرجى إعادة تشغيل البرنامج وتحديد ملف.")
+        logging.info(f"ملف الإدخال المحدد: {input_filename_main}")
+
+        if not input_filename_main: # يجب ألا يحدث هذا إذا تم التعيين أعلاه
+            logging.critical("خطأ برمجي: لم يتم تحديد input_filename_main.")
+            print("خطأ برمجي: لم يتم تحديد input_filename_main.")
             exit()
 
         if not os.path.exists(input_filename_main):
-            logging.critical(f"خطأ: الملف '{input_filename_main}' غير موجود. يرجى التحقق من المسار وإعادة المحاولة.")
-            print(f"خطأ: الملف '{input_filename_main}' غير موجود. يرجى التحقق من المسار وإعادة المحاولة.")
+            logging.critical(f"خطأ: الملف '{input_filename_main}' غير موجود. يرجى التحقق من المسار المحدد في الكود وإعادة المحاولة.")
+            print(f"خطأ: الملف '{input_filename_main}' غير موجود. يرجى التحقق من المسار المحدد في الكود وإعادة المحاولة.")
             exit()
 
         if not input_filename_main.lower().endswith(".txt"):
@@ -259,7 +266,9 @@ if __name__ == '__main__':
             print(f"خطأ: الملف '{input_filename_main}' ليس ملف نصي بامتداد .txt.")
             exit()
 
-        target_output_filename_main = f"translated_{os.path.splitext(os.path.basename(input_filename_main))[0]}_ar.txt"
+        # استخدام os.path.basename للحصول على اسم الملف فقط من المسار الكامل المحتمل
+        base_filename = os.path.basename(input_filename_main)
+        target_output_filename_main = f"translated_{os.path.splitext(base_filename)[0]}_ar.txt"
 
         logging.info(f"\nTranslating '{input_filename_main}' to '{target_output_filename_main}'...")
         # Using the global TARGET_CHUNK_CHAR_LENGTH for chunk_size
