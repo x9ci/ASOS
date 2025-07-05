@@ -239,30 +239,27 @@ if __name__ == '__main__':
         logging.info(f"Original Sample:\n{sample_text_for_prompt_test}")
         logging.info(f"Translated Sample (ar):\n{translated_sample_text}")
 
-        logging.info(f"\n--- Test 2: File Translation ('document.txt') ---")
+        logging.info(f"\n--- Main File Translation ---")
 
-        input_filename_main = "document.txt" # هذا هو الملف الرئيسي الذي سنستخدمه
+        # طلب اسم الملف من المستخدم
+        input_filename_main = input("الرجاء إدخال اسم ملف النص (txt.) الذي تريد ترجمته (مثال: my_book.txt): ").strip()
+
+        if not input_filename_main:
+            logging.critical("لم يتم إدخال اسم ملف. الخروج من البرنامج.")
+            print("لم يتم إدخال اسم ملف. يرجى إعادة تشغيل البرنامج وتحديد ملف.")
+            exit()
 
         if not os.path.exists(input_filename_main):
-            logging.error(f"Error: Main test file '{input_filename_main}' not found. Creating a dummy file.")
-            dummy_content = """=== Page 1 ===
-This is the first line of the first paragraph.
-This is the second line of the first paragraph.
+            logging.critical(f"خطأ: الملف '{input_filename_main}' غير موجود. يرجى التحقق من المسار وإعادة المحاولة.")
+            print(f"خطأ: الملف '{input_filename_main}' غير موجود. يرجى التحقق من المسار وإعادة المحاولة.")
+            exit()
 
-This is the first line of the second paragraph.
-This is a very long sentence to test how chunking behaves when it encounters sentences that might be longer than the ideal chunk size, pushing the boundaries of our segmentation logic and ensuring that the system can gracefully handle such edge cases without losing context or breaking the narrative flow.
+        if not input_filename_main.lower().endswith(".txt"):
+            logging.critical(f"خطأ: الملف '{input_filename_main}' ليس ملف نصي بامتداد .txt.")
+            print(f"خطأ: الملف '{input_filename_main}' ليس ملف نصي بامتداد .txt.")
+            exit()
 
-=== Page 2 ===
-This is a paragraph on the second page.
-It has some more text.
-
-Another paragraph to conclude the dummy file.
-"""
-            with open(input_filename_main, "w", encoding="utf-8") as f:
-                f.write(dummy_content)
-            logging.info(f"Dummy '{input_filename_main}' created.")
-
-        target_output_filename_main = f"translated_{os.path.splitext(input_filename_main)[0]}_ar.txt"
+        target_output_filename_main = f"translated_{os.path.splitext(os.path.basename(input_filename_main))[0]}_ar.txt"
 
         logging.info(f"\nTranslating '{input_filename_main}' to '{target_output_filename_main}'...")
         # Using the global TARGET_CHUNK_CHAR_LENGTH for chunk_size
