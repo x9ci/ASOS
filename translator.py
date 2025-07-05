@@ -110,63 +110,34 @@ def translate_book_file(api_key: str, filepath: str, target_language: str = "ar"
         print(f"Warning: The file {filepath} is empty or contains only whitespace.")
         return "" # Return empty string for empty file content
 
-    # Args:
-    #     api_key: Your Gemini API key.
-    #     filepath: Path to the text file (.txt).
-    #     target_language: The target language code.
-    #     chunk_size: Approximate target character length for each chunk.
-    #                 The actual chunking will prioritize semantic breaks (paragraphs).
+    # The following commented out block was a duplicate of the function's docstring and initial checks.
+    # It has been removed to correct the code structure.
+    # # Args:
+    # #     api_key: Your Gemini API key.
+    # #     filepath: Path to the text file (.txt).
+    # #     target_language: The target language code.
+    # #     chunk_size: Approximate target character length for each chunk.
+    # #                 The actual chunking will prioritize semantic breaks (paragraphs).
 
-    # Returns:
-    #     The full translated text, or None if an error occurs.
-    # """
-    # if not os.path.exists(filepath):
-    #     print(f"Error: Input file not found at {filepath}")
-    #     return None
+    # # Returns:
+    # #     The full translated text, or None if an error occurs.
+    # # """
+    # # if not os.path.exists(filepath):
+    # #     print(f"Error: Input file not found at {filepath}")
+    # #     return None
 
-    # file_extension = os.path.splitext(filepath)[1].lower()
-    # if file_extension != ".txt":
-    #     print(f"Error: Unsupported file type '{file_extension}'. Currently only .txt files are supported.")
-    #     return None
+    # # file_extension = os.path.splitext(filepath)[1].lower()
+    # # if file_extension != ".txt":
+    # #     print(f"Error: Unsupported file type '{file_extension}'. Currently only .txt files are supported.")
+    # #     return None
 
-    # original_text = read_text_file(filepath)
-    # if original_text is None:
-    #     return None
+    # # original_text = read_text_file(filepath)
+    # # if original_text is None:
+    # #     return None
 
-    # if not original_text.strip():
-    #     print(f"Warning: The file {filepath} is empty or contains only whitespace.")
-    #     return ""
-
-    # Split text by page markers first to process page by page
-    # (=== Page \d+ ===) is a capturing group to keep the page markers temporarily for page number extraction
-    pages_content = re.split(r'(=== Page \d+ ===)', original_text)
-
-    Args:
-        api_key: Your Gemini API key.
-        filepath: Path to the text file (.txt).
-        target_language: The target language code.
-        chunk_size: Approximate target character length for each chunk.
-                    The actual chunking will prioritize semantic breaks (paragraphs).
-
-    Returns:
-        The full translated text, or None if an error occurs.
-    """
-    if not os.path.exists(filepath):
-        print(f"Error: Input file not found at {filepath}")
-        return None
-
-    file_extension = os.path.splitext(filepath)[1].lower()
-    if file_extension != ".txt":
-        print(f"Error: Unsupported file type '{file_extension}'. Currently only .txt files are supported.")
-        return None
-
-    original_text = read_text_file(filepath)
-    if original_text is None:
-        return None
-
-    if not original_text.strip():
-        print(f"Warning: The file {filepath} is empty or contains only whitespace.")
-        return ""
+    # # if not original_text.strip():
+    # #     print(f"Warning: The file {filepath} is empty or contains only whitespace.")
+    # #     return ""
 
     # Split text by page markers first to process page by page
     # (=== Page \d+ ===) is a capturing group to keep the page markers temporarily for page number extraction
@@ -357,15 +328,14 @@ Another paragraph to conclude the dummy file.
         # Using the global TARGET_CHUNK_CHAR_LENGTH for chunk_size
         translated_book_content = translate_book_file(API_KEY, input_filename_main, target_language="ar", chunk_size=TARGET_CHUNK_CHAR_LENGTH)
 
-        if translated_book_content:
+        if translated_book_content is not None: # Check for None explicitly
             # Check for known error strings from the translation functions
             if "Translation failed" in translated_book_content or \
-               "An error occurred:" in translated_book_content and not translated_book_content.startswith("An error occurred: Translation result was empty"): # Allow empty result error for single small chunks
+               ("An error occurred:" in translated_book_content and not translated_book_content.startswith("An error occurred: Translation result was empty")): # Allow empty result error for single small chunks
                 print("\n--- Translation Process Encountered an Error ---")
                 print(f"Error details: {translated_book_content}")
                 print(f"Full content might not be translated or accurate. Check logs/output file for details.")
-                # Save whatever was translated, or the error message
-                save_text_to_file(translated_book_content, target_output_filename_main)
+                save_text_to_file(translated_book_content, target_output_filename_main) # Save error message or partial
             elif "Translation result was empty" in translated_book_content:
                 print("\n--- Translation Warning ---")
                 print(f"Warning details: {translated_book_content}")
@@ -379,31 +349,32 @@ Another paragraph to conclude the dummy file.
                 else:
                     print(f"Failed to save translated content to '{target_output_filename_main}'")
         else:
-            # This case might occur if read_text_file returns None or other pre-translation errors.
-            print(f"Failed to translate the book file: {input_filename_main}. No content was returned from translate_book_file.")
+            # This case primarily occurs if translate_book_file itself returns None (e.g., file not found, unsupported type before translation starts)
+            print(f"Failed to translate the book file: {input_filename_main}. No content was returned (possibly due to initial file processing issues).")
 
         # --- Additional Test Cases (as before, can be enabled/disabled) ---
         run_additional_tests = False # Set to True to run these
         if run_additional_tests:
             print(f"\n--- Test 3: Non-existent input file ---")
-            translate_book_file(API_KEY, "non_existent_file.txt")
+            translate_book_file(API_KEY, "non_existent_file.txt") # This should print an error and return None
 
             print(f"\n--- Test 4: Unsupported file type ---")
             empty_pdf_filename = "dummy.pdf"
             with open(empty_pdf_filename, "w", encoding="utf-8") as f: f.write("")
-            translate_book_file(API_KEY, empty_pdf_filename)
+            translate_book_file(API_KEY, empty_pdf_filename) # This should print an error and return None
             if os.path.exists(empty_pdf_filename): os.remove(empty_pdf_filename)
 
             print(f"\n--- Test 5: Empty input file ---")
             empty_txt_filename = "empty.txt"
+            target_empty_translated_filename = f"translated_{empty_txt_filename}"
             with open(empty_txt_filename, "w", encoding="utf-8") as f: f.write("")
-            translated_empty_content = translate_book_file(API_KEY, empty_txt_filename)
+            translated_empty_content = translate_book_file(API_KEY, empty_txt_filename) # Should return ""
             if translated_empty_content == "":
-                 print(f"Translation of empty file '{empty_txt_filename}' handled correctly.")
+                 print(f"Translation of empty file '{empty_txt_filename}' handled correctly (returned empty string).")
             else:
                  print(f"Error: Translation of empty file '{empty_txt_filename}' did not return empty string: '{translated_empty_content}'")
-            save_text_to_file(translated_empty_content, f"translated_{empty_txt_filename}")
+            save_text_to_file(translated_empty_content, target_empty_translated_filename)
             if os.path.exists(empty_txt_filename): os.remove(empty_txt_filename)
-            if os.path.exists(f"translated_{empty_txt_filename}"): os.remove(f"translated_{empty_txt_filename}")
+            if os.path.exists(target_empty_translated_filename): os.remove(target_empty_translated_filename)
 
         print(f"\n--- Main test completed. Please check '{target_output_filename_main}' for the translated output. ---")
